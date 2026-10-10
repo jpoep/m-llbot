@@ -4,6 +4,7 @@ import {
 	canStillPlayJoker,
 	effectiveDueDate,
 	isMine,
+	nextAfterCompletion,
 	playableJokers,
 	rescheduleOptions,
 	taskButtons,
@@ -17,6 +18,7 @@ import {
 	formatDate,
 	formatMinute,
 	formatRelativeDate,
+	formatWhen,
 	type LocalDate,
 	type LocalMoment,
 } from "./calendar.ts"
@@ -122,20 +124,93 @@ const withinPicker = (state: State, task: Task, today: LocalDate): boolean =>
 const pickerLabel = (state: State, task: Task, today: LocalDate): string =>
 	`${taskButtonLabel(task)} (${formatRelativeDate(effectiveDueDate(state, task), today)})`
 
+/** Due today (or overdue) and mine: one tap is enough. Everything else gets a confirmation. */
+const doneButtonFor = (state: State, task: Task, actor: ParticipantId, today: LocalDate) => {
+	const onSchedule = effectiveDueDate(state, task) <= today && isMine(state, task, actor)
+	const ref = { taskId: task.id, index: task.current.index }
+	return {
+		text: pickerLabel(state, task, today),
+		data: encodeCallback(onSchedule ? { _tag: "Done", ...ref } : { _tag: "DoneAsk", ...ref }),
+	}
+}
+
+const myUpcoming = (state: State, actor: ParticipantId, today: LocalDate): ReadonlyArray<Task> =>
+	state.tasks.filter((t) => withinPicker(state, t, today) && isMine(state, t, actor))
+
+const otherThanMine = {
+	text: "Etwas anderes erledigt",
+	data: encodeCallback({ _tag: "DoneOther" }),
+}
+
 export const donePicker = (state: State, actor: ParticipantId, today: LocalDate): View => {
-	const mine = state.tasks.filter((t) => withinPicker(state, t, today) && isMine(state, t, actor))
+	const mine = myUpcoming(state, actor, today)
+	const more = state.tasks.length > mine.length ? [[otherThanMine]] : []
 	if (mine.length === 0) {
-		return view("In den nächsten Tagen steht für dich nichts an.")
+		return view(
+			"In den nächsten Tagen steht für dich nichts an. Außer der Reihe geht natürlich trotzdem.",
+			more,
+		)
+	}
+	return view("Was ist erledigt?", [
+		...column(mine.map((t) => doneButtonFor(state, t, actor, today))),
+		...more,
+	])
+}
+
+/** Every other task, whoever's turn and whenever it is due. */
+export const doneOtherPicker = (state: State, actor: ParticipantId, today: LocalDate): View => {
+	const mine = new Set(myUpcoming(state, actor, today).map((t) => t.id))
+	const rest = state.tasks.filter((t) => !mine.has(t.id))
+	if (rest.length === 0) {
+		return view("Da ist nichts weiter. Alles andere steht schon in der Liste davor.")
 	}
 	return view(
-		"Was ist erledigt?",
+		"Was wurde außer der Reihe erledigt?",
 		column(
-			mine.map((t) => ({
-				text: pickerLabel(state, t, today),
-				data: encodeCallback({ _tag: "Done", taskId: t.id, index: t.current.index }),
-			})),
+			rest.map((t) => {
+				const due = effectiveDueDate(state, t)
+				const who = whoDoesIt(state, t, responsibleOn(state, t, due))
+				return {
+					text: `${taskButtonLabel(t)} (${formatRelativeDate(due, today)}, ${who})`,
+					data: encodeCallback({ _tag: "DoneAsk", taskId: t.id, index: t.current.index }),
+				}
+			}),
 		),
 	)
+}
+
+/** Explains what an off-schedule check-off will do before it happens. */
+export const doneConfirm = (
+	state: State,
+	task: Task,
+	actor: ParticipantId,
+	today: LocalDate,
+): View => {
+	const due = effectiveDueDate(state, task)
+	const responsible = responsibleOn(state, task, due)
+	const lines: Array<string> = []
+	if (task.kind === "rotating" && responsible.length > 0 && !responsible.includes(actor)) {
+		lines.push(
+			`Eigentlich ist ${names(state, responsible)} bei ${taskLabel(task)} dran. Wenn du es abhakst, ist ${names(state, responsible)} diesmal raus.`,
+		)
+	} else {
+		lines.push(`${taskLabel(task)} ist ${formatRelativeDate(due, today)} fällig.`)
+	}
+	const { occurrence, offSchedule } = nextAfterCompletion(state, task, today)
+	lines.push(
+		offSchedule
+			? `Da es früher erledigt ist, zählt der Rhythmus ab heute. Nächstes Mal wäre dann ${formatWhen(occurrence.dueDate, today)}.`
+			: `Nächstes Mal wäre dann ${formatWhen(occurrence.dueDate, today)}.`,
+	)
+	return view(`${lines.join("\n\n")}\n\nAbhaken?`, [
+		[
+			{
+				text: "Ja, erledigt",
+				data: encodeCallback({ _tag: "DoneConfirm", taskId: task.id, index: task.current.index }),
+			},
+			{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) },
+		],
+	])
 }
 
 export const reschedulePicker = (state: State, actor: ParticipantId, today: LocalDate): View => {

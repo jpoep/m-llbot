@@ -83,7 +83,7 @@ export const HELP_TEXT = [
 	"",
 	"/heute – was heute ansteht",
 	"/plan – die nächsten zwei Wochen",
-	"/erledigt – Aufgabe abhaken",
+	"/erledigt – Aufgabe abhaken, auch außer der Reihe",
 	"/verschieben – einen Termin einmalig verschieben (muss genehmigt werden)",
 	"/uebernehmen – freiwillig eine Aufgabe übernehmen",
 	"/joker – Joker ansehen und einsetzen",
@@ -104,5 +104,6 @@ export const HELP_TEXT = [
 	"<b>Regeln</b>",
 	`• Wer eine Aufgabe bis Mitternacht nicht erledigt, hat sie am nächsten Tag wieder, und alle anderen bekommen einen Joker. Ab ${formatMinute(settings.eveningStartMinute)} Uhr wird erinnert, gegen Mitternacht minütlich.`,
 	`• Mit einem Joker muss der Schuldige einen deiner Termine übernehmen. Einsetzbar bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag, gern auch früher.`,
+	"• Wer früher erledigt, setzt den Rhythmus neu: das nächste Mal zählt ab dem Tag, an dem es erledigt wurde. Fremde Aufgaben abhaken geht auch, dann ist der andere diesmal raus.",
 	"• Verschieben und Urlaub muss jemand anderes genehmigen. Im Urlaub übernehmen die anderen, ohne Joker.",
 ].join("\n")

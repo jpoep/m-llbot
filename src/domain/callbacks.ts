@@ -7,6 +7,9 @@ import { fromCompact, type LocalDate, toCompact } from "./calendar.ts"
  */
 export type CallbackAction =
 	| { readonly _tag: "Done"; readonly taskId: string; readonly index: number }
+	| { readonly _tag: "DoneOther" }
+	| { readonly _tag: "DoneAsk"; readonly taskId: string; readonly index: number }
+	| { readonly _tag: "DoneConfirm"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "TakeOver"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "Joker"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "RescheduleStart"; readonly taskId: string; readonly index: number }
@@ -33,6 +36,9 @@ type Tag = CallbackAction["_tag"]
 
 const PREFIX: Record<Tag, string> = {
 	Done: "d",
+	DoneOther: "do",
+	DoneAsk: "da",
+	DoneConfirm: "dc",
 	TakeOver: "t",
 	Joker: "j",
 	RescheduleStart: "rs",
@@ -57,6 +63,8 @@ export const encodeCallback = (action: CallbackAction): string => {
 	const prefix = PREFIX[action._tag]
 	switch (action._tag) {
 		case "Done":
+		case "DoneAsk":
+		case "DoneConfirm":
 		case "TakeOver":
 		case "Joker":
 		case "RescheduleStart":
@@ -79,6 +87,7 @@ export const encodeCallback = (action: CallbackAction): string => {
 		case "AnnoyanceSave":
 			return `${prefix}:${action.taskId}:${action.level}`
 		case "Dismiss":
+		case "DoneOther":
 			return prefix
 	}
 }
@@ -107,6 +116,8 @@ export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
 	}
 	switch (tag) {
 		case "Done":
+		case "DoneAsk":
+		case "DoneConfirm":
 		case "TakeOver":
 		case "Joker":
 		case "RescheduleStart":
@@ -138,6 +149,7 @@ export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
 				Option.map(({ taskId, level }) => ({ _tag: tag, taskId, level })),
 			)
 		case "Dismiss":
+		case "DoneOther":
 			return first === undefined ? Option.some({ _tag: tag }) : Option.none()
 	}
 }

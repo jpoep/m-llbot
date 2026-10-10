@@ -45,6 +45,8 @@ import {
 	annoyanceTaskPicker,
 	deleteConfirm,
 	deletePicker,
+	doneConfirm,
+	doneOtherPicker,
 	donePicker,
 	jokerView,
 	planView,
@@ -162,7 +164,22 @@ const runButton = (
 		}
 	})
 
-/** Buttons that only open another view (no state change). */
+/** Buttons that replace their message with another view (no state change). */
+const showView = (
+	ctx: Context,
+	render: (state: State, actor: ParticipantId, now: LocalMoment) => View,
+): Handler =>
+	Effect.gen(function* () {
+		const { state, now } = yield* readState
+		const actor = actorOf(ctx)
+		if (Option.isNone(findParticipant(state, actor))) {
+			return yield* toast(ctx, NOT_A_MEMBER, true)
+		}
+		yield* toast(ctx, "")
+		yield* editOrReply(ctx, render(state, actor, now))
+	})
+
+/** Like {@link showView}, for a specific task that may have disappeared in the meantime. */
 const showTaskView = (
 	ctx: Context,
 	taskId: string,
@@ -188,6 +205,22 @@ const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
 	switch (action._tag) {
 		case "Done":
 			return runButton(ctx, (s, now) => complete(s, actor, action.taskId, action.index, now.date))
+		case "DoneConfirm":
+			return runButton(
+				ctx,
+				(s, now) => complete(s, actor, action.taskId, action.index, now.date),
+				removeKeyboard(ctx),
+			)
+		case "DoneOther":
+			return showView(ctx, (s, a, now) => doneOtherPicker(s, a, now.date))
+		case "DoneAsk":
+			return showTaskView(ctx, action.taskId, (s, a, now) =>
+				Option.flatMap(findTask(s, action.taskId), (task) =>
+					task.current.index === action.index
+						? Option.some(doneConfirm(s, task, a, now.date))
+						: Option.none(),
+				),
+			)
 		case "TakeOver":
 			return runButton(ctx, (s, now) => takeOver(s, actor, action.taskId, action.index, now.date))
 		case "Joker":

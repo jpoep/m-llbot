@@ -64,12 +64,14 @@ describe("round robin", () => {
 		expect(responsibleOn(state, task(state, 1), day(2))).toEqual([B])
 	})
 
-	test("only the responsible person can tick off a rotating task", () => {
-		const state = household(spec())
+	test("someone else can tick off a rotating task; the person whose turn it was is off the hook", () => {
+		const state = household(spec({ cadence: cadence(2, "day"), firstDue: day(2) }))
 		const t = task(state)
-		expect(fail(complete(state, B, t.id, t.current.index, day(2))).reason).toContain(
-			"nicht deine Aufgabe",
-		)
+		const result = run(complete(state, B, t.id, t.current.index, day(2)))
+		expect(textsTo(result.outbox, A).join()).toContain("Diesmal bist du raus")
+		expect(result.state.participants.find((p) => p.id === B)?.stats.done).toBe(1)
+		// Like a take-over: the rotation goes on normally, so day 4 is B's regular turn.
+		expect(responsibleOn(result.state, task(result.state), day(4))).toEqual([B])
 	})
 
 	test("old buttons are rejected after completion", () => {
@@ -81,9 +83,11 @@ describe("round robin", () => {
 		)
 	})
 
-	test("completing early keeps the grid, completing late skips past grid dates", () => {
+	test("completing early restarts the rhythm from that day, completing late keeps the grid", () => {
 		const early = doneBy(household(spec({ cadence: cadence(1, "week"), firstDue: day(7) })), A, 5)
-		expect(task(early).current.dueDate).toBe(day(14))
+		expect(task(early).current.dueDate).toBe(day(12))
+		const again = doneBy(early, B, 12)
+		expect(task(again).current.dueDate).toBe(day(19))
 
 		const late = doneBy(household(spec({ cadence: cadence(2, "day"), firstDue: day(2) })), A, 5)
 		expect(task(late).current.dueDate).toBe(day(6))

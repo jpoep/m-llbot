@@ -106,6 +106,13 @@ export const formatRelativeDate = (date: LocalDate, today: LocalDate): string =>
 	}
 }
 
+/** `übermorgen (Mi, 14.10.)`, or just `Fr, 16.10.` when there is no relative word for it. */
+export const formatWhen = (date: LocalDate, today: LocalDate): string => {
+	const relative = formatRelativeDate(date, today)
+	const absolute = formatDate(date, today)
+	return relative === absolute ? absolute : `${relative} (${absolute})`
+}
+
 const isValidDate = (year: number, month: number, day: number): boolean =>
 	month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, month)
 

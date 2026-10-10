@@ -9,6 +9,7 @@ import {
 	formatDate,
 	formatMinute,
 	formatRelativeDate,
+	formatWhen,
 	type LocalDate,
 	type LocalMoment,
 } from "./calendar.ts"
@@ -181,6 +182,40 @@ export const join = (state: State, member: NewMember): Effect.Effect<Transition>
 // Completing, taking over, jokers
 // ---------------------------------------------------------------------------
 
+/** The next occurrence after completing the current one on `today`. */
+export const nextAfterCompletion = (
+	state: State,
+	task: Task,
+	today: LocalDate,
+): {
+	readonly anchor: LocalDate
+	readonly occurrence: Occurrence
+	readonly offSchedule: boolean
+} => {
+	if (today < effectiveDueDate(state, task)) {
+		// Done ahead of time: the rhythm restarts from the day it was actually done.
+		return {
+			anchor: today,
+			occurrence: freshOccurrence(1, nthDate(today, task.cadence, 1)),
+			offSchedule: true,
+		}
+	}
+	// On time or late (missed, rescheduled): stay on the grid, skipping dates that already passed.
+	let nextIndex = task.current.index + 1
+	while (nthDate(task.anchor, task.cadence, nextIndex) <= today) {
+		nextIndex++
+	}
+	return {
+		anchor: task.anchor,
+		occurrence: freshOccurrence(nextIndex, nthDate(task.anchor, task.cadence, nextIndex)),
+		offSchedule: false,
+	}
+}
+
+/**
+ * Ticks off the current occurrence. Anyone may do it: someone else's turn counts like a voluntary
+ * take-over, and doing it early restarts the rhythm from today.
+ */
 export const complete = (
 	state: State,
 	actor: ParticipantId,
@@ -192,20 +227,15 @@ export const complete = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireCurrent(state, taskId, index)
 		const due = effectiveDueDate(state, task)
-		if (task.kind === "rotating" && !responsibleOn(state, task, due).includes(actor)) {
-			return yield* reject(
-				"Das ist gerade nicht deine Aufgabe. Wer unbedingt will, kann sie mit /uebernehmen an sich nehmen.",
-			)
-		}
+		const wasResponsible = responsibleOn(state, task, due)
+		const relieved = task.kind === "rotating" ? wasResponsible.filter((id) => id !== actor) : []
 
-		let nextIndex = task.current.index + 1
-		while (nthDate(task.anchor, task.cadence, nextIndex) <= today) {
-			nextIndex++
-		}
+		const { anchor, occurrence, offSchedule } = nextAfterCompletion(state, task, today)
 		const updated: Task = {
 			...task,
+			anchor,
 			turn: task.kind === "rotating" ? task.turn + 1 : task.turn,
-			current: freshOccurrence(nextIndex, nthDate(task.anchor, task.cadence, nextIndex)),
+			current: occurrence,
 		}
 		const next = updateStats(
 			{
@@ -215,18 +245,21 @@ export const complete = (
 			actor,
 			(s) => ({ ...s, done: s.done + 1 }),
 		)
-		const early = daysBetween(today, due) > 0 ? " Sogar vor der Zeit. Respekt." : ""
+		const upcoming = nextUp(next, updated, today)
+		const early = offSchedule
+			? ` Außer der Reihe, der Rhythmus zählt jetzt ab ${formatRelativeDate(today, today)}.`
+			: ""
 		const forEveryone = task.kind === "joint" ? ", damit ist es für alle abgehakt" : ""
+		const message = (p: Participant): string =>
+			relieved.includes(p.id)
+				? `${bold(me.name)} hat ${taskLabel(task)} erledigt, obwohl du dran warst. Diesmal bist du raus.${early}${upcoming}`
+				: `${bold(me.name)} hat ${taskLabel(task)} erledigt${forEveryone}.${early}${upcoming}`
 		return {
 			state: next,
 			toast: "Erledigt.",
 			outbox: [
-				send(me.chatId, `Erledigt: ${taskLabel(task)}.${early}${nextUp(next, updated, today)}`),
-				...notifyOthers(
-					next,
-					actor,
-					`${bold(me.name)} hat ${taskLabel(task)} erledigt${forEveryone}.${nextUp(next, updated, today)}`,
-				),
+				send(me.chatId, `Erledigt: ${taskLabel(task)}.${early}${upcoming}`),
+				...others(next, actor).map((p) => send(p.chatId, message(p))),
 			],
 		}
 	})
@@ -461,7 +494,7 @@ export const approveReschedule = (
 			current: { ...task.current, dueDate: request.to, lastReminder: null },
 		}
 		const next = withoutRequest(replaceTask(state, updated), requestId)
-		const when = `${formatRelativeDate(request.to, today)} (${formatDate(request.to, today)})`
+		const when = formatWhen(request.to, today)
 		return {
 			state: next,
 			toast: "Genehmigt.",
@@ -893,7 +926,7 @@ export const setNextDate = (
 			}),
 			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
 		}
-		const text = `${taskLabel(task)} ist jetzt ${formatRelativeDate(date, today)} fällig (${formatDate(date, today)}), und von da an im gewohnten Rhythmus.`
+		const text = `${taskLabel(task)} ist jetzt ${formatWhen(date, today)} fällig, und von da an im gewohnten Rhythmus.`
 		return {
 			state: next,
 			outbox: [send(me.chatId, text), ...notifyOthers(next, actor, `${bold(me.name)}: ${text}`)],
