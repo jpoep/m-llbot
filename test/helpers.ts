@@ -34,7 +34,6 @@ export const withPeople = (state: State, ...ids: ReadonlyArray<ParticipantId>): 
 
 export const spec = (overrides: Partial<NewTask> = {}): NewTask => ({
 	name: "Müll runterbringen",
-	emoji: "🗑️",
 	cadence: cadence(2, "day"),
 	kind: "rotating",
 	firstDue: day(2),

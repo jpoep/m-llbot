@@ -203,7 +203,7 @@ describe("taking over", () => {
 		const state = household(spec({ firstDue: day(2) }))
 		const t = task(state)
 		expect(fail(takeOver(state, A, t.id, t.current.index, day(1))).reason).toContain(
-			"sowieso deine",
+			"bereits deine",
 		)
 	})
 })
@@ -224,7 +224,7 @@ describe("vacation", () => {
 				.find((m) => m.chatId === chatOf(B))
 				?.keyboard.flat()
 				.map((b) => b.text),
-		).toEqual(["✅ Genehmigen", "❌ Ablehnen"])
+		).toEqual(["Genehmigen", "Ablehnen"])
 		expect(fail(approveVacation(requested.state, A, id, day(0))).reason).toContain("eigenen Urlaub")
 		// Pending vacations don't change anything yet.
 		expect(responsibleOn(requested.state, task(requested.state), day(2))).toEqual([A])

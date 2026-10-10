@@ -112,10 +112,10 @@ export const formatPreview = (
 	startMinute: number = settings.eveningStartMinute,
 ): string => {
 	const p = preview(level, startMinute)
-	const header = `🔔 Nervigkeit ${p.level}/${MAX_ANNOYANCE}`
-	const morning = `☀️ ${formatMinute(settings.morningDigestMinute)} Morgen-Übersicht`
+	const header = `<b>Nervigkeit ${p.level}/${MAX_ANNOYANCE}</b>`
+	const morning = `${formatMinute(settings.morningDigestMinute)} Uhr: Morgenübersicht`
 	if (p.minutes.length === 0) {
-		return `${header}\n${morning}\n🌙 Abends: Funkstille. Nur die Morgen-Übersicht.`
+		return `${header}\n${morning}\nAbends: nichts. Nur die Morgenübersicht.`
 	}
 	const maxCount = Math.max(...p.perHour.map((h) => h.count))
 	const bars = p.perHour
@@ -127,7 +127,7 @@ export const formatPreview = (
 	return [
 		header,
 		morning,
-		`🌙 Danach ${p.minutes.length} Erinnerungen bis Mitternacht, wenn noch was offen ist:`,
+		`Danach ${p.minutes.length} Erinnerungen bis Mitternacht, solange etwas offen ist:`,
 		"",
 		bars,
 		"",

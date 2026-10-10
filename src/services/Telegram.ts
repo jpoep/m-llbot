@@ -1,12 +1,18 @@
 import { Config, Context, Effect, Layer, Redacted, Ref } from "effect"
-import { Api, InlineKeyboard } from "grammy"
-import type { Keyboard, Outgoing } from "../domain/outbox.ts"
+import { Api, InlineKeyboard, Keyboard as ReplyKeyboard } from "grammy"
+import { type Keyboard, MENU_LAYOUT, type Outgoing } from "../domain/outbox.ts"
 
 /** Delivers the outbox of a transition. Delivery is best effort: failures are logged, never raised. */
 export class Telegram extends Context.Service<
 	Telegram,
 	{ readonly deliver: (messages: ReadonlyArray<Outgoing>) => Effect.Effect<void> }
 >()("Telegram") {}
+
+/** The persistent reply keyboard with the everyday actions. */
+export const mainMenu = (): ReplyKeyboard =>
+	ReplyKeyboard.from(MENU_LAYOUT.map((row) => row.map((label) => ReplyKeyboard.text(label))))
+		.resized()
+		.persistent()
 
 const toInlineKeyboard = (keyboard: Keyboard): InlineKeyboard =>
 	InlineKeyboard.from(keyboard.map((row) => row.map((b) => InlineKeyboard.text(b.text, b.data))))
@@ -17,6 +23,9 @@ const deliverOne = (api: Api, message: Outgoing): Promise<unknown> => {
 		link_preview_options: { is_disabled: true },
 		reply_markup: toInlineKeyboard(message.keyboard),
 	} as const
+	if (message._tag === "Send" && message.menu) {
+		return api.sendMessage(message.chatId, message.text, { ...options, reply_markup: mainMenu() })
+	}
 	return message._tag === "Send"
 		? api.sendMessage(message.chatId, message.text, options)
 		: api.editMessageText(message.chatId, message.messageId, message.text, options)

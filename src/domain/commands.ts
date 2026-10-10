@@ -15,13 +15,6 @@ const splitArgs = (args: string): ReadonlyArray<string> =>
 		.map((part) => part.trim())
 		.filter((part) => part.length > 0)
 
-const LEADING_EMOJI = /^(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*)\s*/u
-
-const splitEmoji = (name: string): [emoji: string, name: string] => {
-	const match = LEADING_EMOJI.exec(name)
-	return match?.[1] ? [match[1], name.slice(match[0].length)] : ["📌", name]
-}
-
 const requireCadence = (text: string | undefined): Effect.Effect<Cadence, Rejected> =>
 	Option.match(Option.flatMap(Option.fromUndefinedOr(text), parseCadence), {
 		onNone: () =>
@@ -49,7 +42,7 @@ export const parseNewTask = (args: string, today: LocalDate): Effect.Effect<NewT
 				"So geht's: <code>/neu Pflanzen gießen | alle 3 Tage</code>\nOptional: <code>| gemeinsam</code> und <code>| ab 01.11.</code>",
 			)
 		}
-		const [emoji, name] = splitEmoji(rawName)
+		const name = rawName
 		const cadence = yield* requireCadence(rawCadence)
 		let kind: TaskKind = "rotating"
 		let firstDue = addDays(today, 1)
@@ -61,7 +54,7 @@ export const parseNewTask = (args: string, today: LocalDate): Effect.Effect<NewT
 				firstDue = yield* requireDate(lower.replace(/^ab\s+/, ""), today)
 			}
 		}
-		return { name, emoji, cadence, kind, firstDue, annoyance: settings.defaultAnnoyance }
+		return { name, cadence, kind, firstDue, annoyance: settings.defaultAnnoyance }
 	})
 
 /** Resolves a task by its number in `/aufgaben` or by (the start of) its name. */
@@ -109,6 +102,21 @@ export const parseDateChange = (
 			state,
 			args,
 			"So geht's: <code>/termin 1 | morgen</code> oder <code>/termin 2 | 24.10.</code>",
+		),
+		([task, value]) => Effect.map(requireDate(value, today), (d) => [task, d] as [Task, LocalDate]),
+	)
+
+/** `/verschieben Nr | Datum` */
+export const parseRescheduleArgs = (
+	state: State,
+	args: string,
+	today: LocalDate,
+): Effect.Effect<[Task, LocalDate], Rejected> =>
+	Effect.flatMap(
+		taskAndValue(
+			state,
+			args,
+			"So geht's: <code>/verschieben 1 | morgen</code> oder <code>/verschieben 2 | Sa</code>. Ohne Angaben gibt es Knöpfe.",
 		),
 		([task, value]) => Effect.map(requireDate(value, today), (d) => [task, d] as [Task, LocalDate]),
 	)

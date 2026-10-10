@@ -53,7 +53,7 @@ describe("transact", () => {
 		})
 		const { attempts, toast, sent } = await Effect.runPromise(program)
 		expect(attempts).toBe(2)
-		expect(toast).toBe("✅ Erledigt!")
+		expect(toast).toBe("Erledigt.")
 		expect(sent).toHaveLength(2)
 	})
 })

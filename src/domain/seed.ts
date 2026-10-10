@@ -12,7 +12,6 @@ const nextSpring = (today: LocalDate): LocalDate => {
 export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 	{
 		name: "Müll runterbringen",
-		emoji: "🗑️",
 		cadence: cadence(3, "day"),
 		kind: "rotating",
 		firstDue: addDays(today, 1),
@@ -20,7 +19,6 @@ export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 	},
 	{
 		name: "Bad putzen",
-		emoji: "🛁",
 		cadence: cadence(2, "week"),
 		kind: "rotating",
 		firstDue: addDays(today, 5),
@@ -28,7 +26,6 @@ export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 	},
 	{
 		name: "Flur, Küche, Wohnzimmer saugen",
-		emoji: "🧹",
 		cadence: cadence(1, "week"),
 		kind: "rotating",
 		firstDue: addDays(today, 2),
@@ -36,7 +33,6 @@ export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 	},
 	{
 		name: "Hausflur saugen",
-		emoji: "🏢",
 		cadence: cadence(1, "year"),
 		kind: "joint",
 		firstDue: addDays(today, 21),
@@ -44,7 +40,6 @@ export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 	},
 	{
 		name: "Fenster putzen",
-		emoji: "🪟",
 		cadence: cadence(1, "year"),
 		kind: "joint",
 		firstDue: nextSpring(today),
@@ -57,6 +52,7 @@ export const emptyState: State = {
 	tasks: [],
 	jokers: [],
 	vacations: [],
+	reschedules: [],
 	lastRollover: null,
 	lastDigest: null,
 	nextId: 1,

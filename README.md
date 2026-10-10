@@ -18,6 +18,9 @@ towards midnight until they are done.
   |---|---|---|---|---|---|---|---|---|---|---|---|
   | Messages per evening | 0 | 7 | 9 | 13 | 17 | 24 | 32 | 42 | 55 | 72 | 92 |
 
+- **Reschedule** (`/verschieben`, or the button under every reminder): move a single occurrence to
+  another day within the next two weeks. Someone else has to approve it. The rhythm stays as is;
+  `/termin` is the permanent change.
 - **Missed a day?** The task is due again the next day (regardless of cadence), the annoyance rises
   by 2 per missed day, and every other participant gets a 🃏 **joker** against the culprit.
 - **Jokers**: when it's your turn on that task, play a joker and the culprit has to do it instead.
@@ -94,20 +97,26 @@ Anyone who knows it can join the household.
   environment only accepts the `main` branch. The role can manage the bot's `muellbot-*`
   resources but can only *read* its own role and policy, so changes to it have to be deployed
   locally with admin credentials.
-- **Pulumi Cloud:** repository secret `PULUMI_ACCESS_TOKEN`.
+- **Pulumi Cloud:** also OIDC. `pulumi/auth-actions` exchanges the GitHub token for a short-lived
+  personal access token of `dyken`. Pulumi Cloud only issues it for
+  `aud=urn:pulumi:org:dyken` + `sub=repo:jpoep/m-llbot:environment:production`.
 
 One-time bootstrap:
 
 1. Run a local `bun run deploy` (creates the deploy role). If the account has no GitHub OIDC
    provider yet: `pulumi config set createGithubOidcProvider true --cwd infra`.
-2. `gh secret set PULUMI_ACCESS_TOKEN --env production` with a token from
-   https://app.pulumi.com/account/tokens
+2. Pulumi Cloud → Settings → OIDC Issuers: register `https://token.actions.githubusercontent.com`
+   with a policy that allows a *personal* token for `dyken` when `aud` is `urn:pulumi:org:dyken` and
+   `sub` is `repo:jpoep/m-llbot:environment:production`.
 3. `gh variable set DEPLOY_ENABLED --body true`
 
 The repository is public, so CI never prints the invite link.
 
 ## Commands (German)
 
-`/heute` `/plan` `/erledigt` `/uebernehmen` `/joker` `/urlaub` `/punkte` `/aufgaben`
+A persistent menu (Heute, Plan, Erledigt, Verschieben, Übernehmen, Joker) covers the everyday
+actions; reminders carry "Erledigt" and "Verschieben" buttons.
+
+`/heute` `/plan` `/erledigt` `/verschieben` `/uebernehmen` `/joker` `/urlaub` `/punkte` `/aufgaben`
 `/neu Name | Rhythmus | gemeinsam | ab Datum` `/rhythmus Nr | Rhythmus` `/termin Nr | Datum`
 `/nervig` `/vorschau 0–10` `/loeschen` `/hilfe`

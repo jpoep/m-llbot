@@ -1,4 +1,5 @@
 import { Option } from "effect"
+import { fromCompact, type LocalDate, toCompact } from "./calendar.ts"
 
 /**
  * Everything an inline button can trigger. Encoded compactly because Telegram limits
@@ -8,6 +9,16 @@ export type CallbackAction =
 	| { readonly _tag: "Done"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "TakeOver"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "Joker"; readonly taskId: string; readonly index: number }
+	| { readonly _tag: "RescheduleStart"; readonly taskId: string; readonly index: number }
+	| {
+			readonly _tag: "ReschedulePick"
+			readonly taskId: string
+			readonly index: number
+			readonly date: LocalDate
+	  }
+	| { readonly _tag: "RescheduleApprove"; readonly requestId: string }
+	| { readonly _tag: "RescheduleReject"; readonly requestId: string }
+	| { readonly _tag: "RescheduleCancel"; readonly requestId: string }
 	| { readonly _tag: "VacationApprove"; readonly vacationId: string }
 	| { readonly _tag: "VacationReject"; readonly vacationId: string }
 	| { readonly _tag: "VacationCancel"; readonly vacationId: string }
@@ -24,6 +35,11 @@ const PREFIX: Record<Tag, string> = {
 	Done: "d",
 	TakeOver: "t",
 	Joker: "j",
+	RescheduleStart: "rs",
+	ReschedulePick: "rp",
+	RescheduleApprove: "ra",
+	RescheduleReject: "rr",
+	RescheduleCancel: "rc",
 	VacationApprove: "va",
 	VacationReject: "vr",
 	VacationCancel: "vc",
@@ -43,7 +59,14 @@ export const encodeCallback = (action: CallbackAction): string => {
 		case "Done":
 		case "TakeOver":
 		case "Joker":
+		case "RescheduleStart":
 			return `${prefix}:${action.taskId}:${action.index}`
+		case "ReschedulePick":
+			return `${prefix}:${action.taskId}:${action.index}:${toCompact(action.date)}`
+		case "RescheduleApprove":
+		case "RescheduleReject":
+		case "RescheduleCancel":
+			return `${prefix}:${action.requestId}`
 		case "VacationApprove":
 		case "VacationReject":
 		case "VacationCancel":
@@ -67,18 +90,35 @@ const parseId = (value: string | undefined): Option.Option<string> =>
 	value !== undefined && ID.test(value) ? Option.some(value) : Option.none()
 
 export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
-	const [prefix = "", first, second, ...rest] = data.split(":")
+	const [prefix = "", first, second, third, ...rest] = data.split(":")
 	const tag = TAG_BY_PREFIX.get(prefix)
 	if (tag === undefined || rest.length > 0) {
+		return Option.none()
+	}
+	if (tag === "ReschedulePick") {
+		return Option.all({
+			taskId: parseId(first),
+			index: parseIndex(second),
+			date: third === undefined ? Option.none() : fromCompact(third),
+		}).pipe(Option.map(({ taskId, index, date }) => ({ _tag: tag, taskId, index, date })))
+	}
+	if (third !== undefined) {
 		return Option.none()
 	}
 	switch (tag) {
 		case "Done":
 		case "TakeOver":
 		case "Joker":
+		case "RescheduleStart":
 			return Option.all({ taskId: parseId(first), index: parseIndex(second) }).pipe(
 				Option.map(({ taskId, index }) => ({ _tag: tag, taskId, index })),
 			)
+		case "RescheduleApprove":
+		case "RescheduleReject":
+		case "RescheduleCancel":
+			return second === undefined
+				? Option.map(parseId(first), (requestId) => ({ _tag: tag, requestId }))
+				: Option.none()
 		case "VacationApprove":
 		case "VacationReject":
 		case "VacationCancel":

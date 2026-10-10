@@ -35,8 +35,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    env:
-      PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -54,6 +52,13 @@ jobs:
           role-session-name: muellbot-${{ github.run_id }}
           aws-region: eu-central-1
           allowed-account-ids: "342560106494"
+      # Exchanges GitHub's OIDC token for a short-lived Pulumi Cloud token (no stored secret).
+      # Pulumi Cloud trusts it via the OIDC issuer policy for this repo's production environment.
+      - uses: pulumi/auth-actions@v2
+        with:
+          organization: dyken
+          requested-token-type: urn:pulumi:token-type:access_token:personal
+          scope: user:dyken
       - uses: pulumi/actions@v7
         with:
           command: up

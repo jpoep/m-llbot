@@ -8,6 +8,7 @@ import {
 	updateStats,
 } from "./actions.ts"
 import { effectiveAnnoyance, reminderMinutes } from "./annoyance.ts"
+import { jokerButton, taskActionRow } from "./buttons.ts"
 import {
 	addDays,
 	formatMinute,
@@ -15,26 +16,20 @@ import {
 	type LocalMoment,
 	minutesUntilMidnight,
 } from "./calendar.ts"
-import { encodeCallback } from "./callbacks.ts"
 import type { Joker, Participant, ParticipantId, State, Task } from "./model.ts"
-import { type Button, type Outgoing, send } from "./outbox.ts"
+import { type Outgoing, send } from "./outbox.ts"
 import { participantName, projectAll, responsibleOn } from "./schedule.ts"
-import { bold, overdueSuffix, reminderHeadline, taskButtonLabel, taskLabel } from "./texts.ts"
+import { bold, overdueSuffix, reminderHeadline, taskLabel } from "./texts.ts"
 
 interface Step {
 	readonly state: State
 	readonly outbox: ReadonlyArray<Outgoing>
 }
 
-const doneButton = (task: Task): Button => ({
-	text: `✅ ${taskButtonLabel(task)}`,
-	data: encodeCallback({ _tag: "Done", taskId: task.id, index: task.current.index }),
-})
+const jointSuffix = (task: Task): string => (task.kind === "joint" ? " (gemeinsam)" : "")
 
-const jokerButton = (task: Task): Button => ({
-	text: `🃏 Joker: ${taskButtonLabel(task)}`,
-	data: encodeCallback({ _tag: "Joker", taskId: task.id, index: task.current.index }),
-})
+const taskLine = (task: Task): string =>
+	`• ${taskLabel(task)}${jointSuffix(task)}${overdueSuffix(task.current.misses)}`
 
 // ---------------------------------------------------------------------------
 // Midnight rollover
@@ -63,15 +58,16 @@ const punishRotatingMiss = (
 		...s,
 		missed: s.missed + 1,
 	}))
-	const culpritName = participantName(state, culprit)
+	const culpritName = bold(participantName(state, culprit))
 	const culpritChat = state.participants.find((p) => p.id === culprit)?.chatId
-	const rivalNames = rivals.map((r) => r.name).join(" und ")
+	const rivalNames = rivals.map((r) => bold(r.name)).join(" und ") || "niemand"
+	const gets = rivals.length > 1 ? "bekommen jeweils" : "bekommt"
 	const outbox: Array<Outgoing> = []
 	if (culpritChat !== undefined) {
 		outbox.push(
 			send(
 				culpritChat,
-				`💀 Mitternacht ist vorbei und ${taskLabel(task)} ist nicht erledigt.\n\nDie Aufgabe ist <b>heute wieder fällig</b>, die Nervigkeit steigt – und ${bold(rivalNames || "niemand")} bekommt einen 🃏 Joker gegen dich.`,
+				`Mitternacht ist vorbei, ${taskLabel(task)} ist es nicht.\n\nDie Aufgabe ist heute wieder fällig, die Nervigkeit steigt, und ${rivalNames} ${gets} einen Joker gegen dich.`,
 			),
 		)
 	}
@@ -79,7 +75,7 @@ const punishRotatingMiss = (
 		outbox.push(
 			send(
 				rival.chatId,
-				`🃏 ${bold(culpritName)} hat ${taskLabel(task)} verpennt. Du bekommst einen <b>Joker</b>!\nSetz ihn ein, wenn du das nächste Mal dran bist (/joker) – dann muss ${bold(culpritName)} ran.`,
+				`${culpritName} hat ${taskLabel(task)} nicht erledigt. Du bekommst dafür einen Joker.\nWenn du das nächste Mal dran bist, kannst du ihn einsetzen (/joker). Dann ist ${culpritName} dran.`,
 			),
 		)
 	}
@@ -96,7 +92,7 @@ const punishJointMiss = (state: State, task: Task): Step => {
 		outbox: state.participants.map((p) =>
 			send(
 				p.chatId,
-				`💀 Ihr habt ${taskLabel(task)} verpennt – alle zusammen. Heute nochmal, und zwar lauter.`,
+				`${taskLabel(task)} ist liegen geblieben. Von allen. Heute ist die nächste Gelegenheit.`,
 			),
 		),
 	}
@@ -138,9 +134,14 @@ export const rolloverDay = (state: State, day: LocalDate): Step => {
 		}
 		next = replaceTask(next, task)
 	}
+	const tasks = next.tasks
 	next = {
 		...next,
 		vacations: next.vacations.filter((v) => v.to >= day),
+		// Requests for past dates or for occurrences that are done by now are moot.
+		reschedules: next.reschedules.filter(
+			(r) => r.to >= day && tasks.some((t) => t.id === r.taskId && t.current.index === r.index),
+		),
 		lastRollover: day,
 	}
 	return { state: next, outbox }
@@ -186,23 +187,18 @@ const digestFor = (
 		return undefined
 	}
 
-	const lines: Array<string> = [`☀️ Guten Morgen, ${bold(participant.name)}!`]
+	const lines: Array<string> = [`Guten Morgen, ${bold(participant.name)}.`]
 	if (dueToday.length > 0) {
-		lines.push("", "<b>Heute fällig:</b>")
-		for (const task of dueToday) {
-			lines.push(
-				`• ${taskLabel(task)}${task.kind === "joint" ? " 👫" : ""}${overdueSuffix(task.current.misses)}`,
-			)
-		}
-		lines.push("", `Ab ${formatMinute(settings.eveningStartMinute)} Uhr werde ich ungemütlich. 😈`)
+		lines.push("", "<b>Heute fällig:</b>", ...dueToday.map(taskLine))
+		lines.push(
+			"",
+			`Ab ${formatMinute(settings.eveningStartMinute)} Uhr erinnere ich in zunehmender Frequenz daran.`,
+		)
 	} else {
-		lines.push("", "Heute hast du frei. 🎉")
+		lines.push("", "Heute ist für dich nichts fällig.")
 	}
 	if (dueTomorrow.length > 0) {
-		lines.push("", "<b>Morgen:</b>")
-		for (const o of dueTomorrow) {
-			lines.push(`• ${taskLabel(o.task)}`)
-		}
+		lines.push("", "<b>Morgen:</b>", ...dueTomorrow.map((o) => `• ${taskLabel(o.task)}`))
 	}
 
 	const jokerTasks = [
@@ -217,11 +213,11 @@ const digestFor = (
 	if (jokerTasks.length > 0) {
 		lines.push(
 			"",
-			`🃏 Du hast Joker! Einsetzbar bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`,
+			`Du hast einen Joker, der sich hier einsetzen lässt. Bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`,
 		)
 	}
 	return send(participant.chatId, lines.join("\n"), [
-		...dueToday.map((t) => [doneButton(t)]),
+		...dueToday.map(taskActionRow),
 		...jokerTasks.map((t) => [jokerButton(t)]),
 	])
 }
@@ -274,17 +270,9 @@ const reminders = (state: State, now: LocalMoment): Step => {
 		if (mine.length === 0) {
 			return []
 		}
-		const lines = mine.map(
-			(t) =>
-				`• ${taskLabel(t)}${t.kind === "joint" ? " 👫" : ""}${overdueSuffix(t.current.misses)}`,
-		)
 		const headline = reminderHeadline(minutesLeft, now.minute + p.id)
 		return [
-			send(
-				p.chatId,
-				`${headline}\n\n${lines.join("\n")}`,
-				mine.map((t) => [doneButton(t)]),
-			),
+			send(p.chatId, `${headline}\n\n${mine.map(taskLine).join("\n")}`, mine.map(taskActionRow)),
 		]
 	})
 	return { state: next, outbox }

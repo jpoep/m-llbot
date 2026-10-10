@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Annoyance } from "./annoyance.ts"
 import { Cadence } from "./cadence.ts"
 import { LocalDate } from "./calendar.ts"
@@ -55,7 +55,6 @@ export type Occurrence = typeof Occurrence.Type
 export const Task = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
-	emoji: Schema.String,
 	kind: TaskKind,
 	cadence: Cadence,
 	annoyance: Annoyance,
@@ -92,11 +91,26 @@ export const Vacation = Schema.Struct({
 })
 export type Vacation = typeof Vacation.Type
 
+/** A one-off move of a single occurrence, waiting for someone else's approval. */
+export const RescheduleRequest = Schema.Struct({
+	id: Schema.String,
+	taskId: Schema.String,
+	/** The occurrence it applies to; stale once that occurrence is done. */
+	index: Count,
+	requester: ParticipantId,
+	from: LocalDate,
+	to: LocalDate,
+})
+export type RescheduleRequest = typeof RescheduleRequest.Type
+
 export const State = Schema.Struct({
 	participants: Schema.Array(Participant),
 	tasks: Schema.Array(Task),
 	jokers: Schema.Array(Joker),
 	vacations: Schema.Array(Vacation),
+	reschedules: Schema.Array(RescheduleRequest).pipe(
+		Schema.withDecodingDefaultKey(Effect.succeed([])),
+	),
 	/** Last day whose midnight rollover (miss detection, postponing) has been processed. */
 	lastRollover: Schema.NullOr(LocalDate),
 	/** Last day for which the morning digest was sent. */

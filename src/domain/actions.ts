@@ -3,6 +3,7 @@ import { settings } from "../settings.ts"
 import { clampLevel, formatPreview } from "./annoyance.ts"
 import { type Cadence, formatCadence, nthDate } from "./cadence.ts"
 import {
+	addDays,
 	compareMoments,
 	daysBetween,
 	formatDate,
@@ -18,13 +19,14 @@ import {
 	type Occurrence,
 	type Participant,
 	type ParticipantId,
+	type RescheduleRequest,
 	type State,
 	type Stats,
 	type Task,
 	type TaskKind,
 	type Vacation,
 } from "./model.ts"
-import { column, type Outgoing, send } from "./outbox.ts"
+import { column, type Outgoing, send, sendWithMenu } from "./outbox.ts"
 import {
 	findParticipant,
 	findTask,
@@ -82,13 +84,13 @@ const chatOf = (state: State, id: ParticipantId): ReadonlyArray<number> =>
 
 const requireParticipant = (state: State, id: ParticipantId) =>
 	Option.match(findParticipant(state, id), {
-		onNone: () => reject("Du bist noch nicht dabei. Frag nach dem Einladungslink."),
+		onNone: () => reject("Du gehörst nicht zu diesem Haushalt. Ohne Einladungslink bleibt das so."),
 		onSome: Effect.succeed,
 	})
 
 const requireTask = (state: State, taskId: string) =>
 	Option.match(findTask(state, taskId), {
-		onNone: () => reject("Diese Aufgabe gibt es nicht (mehr)."),
+		onNone: () => reject("Diese Aufgabe gibt es nicht mehr."),
 		onSome: Effect.succeed,
 	})
 
@@ -97,12 +99,16 @@ const requireCurrent = (state: State, taskId: string, index: number) =>
 	Effect.flatMap(requireTask(state, taskId), (task) =>
 		task.current.index === index
 			? Effect.succeed(task)
-			: reject("Das ist schon erledigt oder nicht mehr aktuell. ✅"),
+			: reject("Das ist schon erledigt oder nicht mehr aktuell."),
 	)
 
 /** The date the current occurrence will actually happen (after vacation postponements). */
 export const effectiveDueDate = (state: State, task: Task): LocalDate =>
 	projectTask(state, task, "9999-12-31" as LocalDate)[0]?.date ?? task.current.dueDate
+
+/** Whether `actor` is the one (or one of those) who has to do the task's current occurrence. */
+export const isMine = (state: State, task: Task, actor: ParticipantId): boolean =>
+	responsibleOn(state, task, effectiveDueDate(state, task)).includes(actor)
 
 const freshOccurrence = (index: number, dueDate: LocalDate): Occurrence => ({
 	index,
@@ -121,7 +127,7 @@ const nextUp = (state: State, task: Task, today: LocalDate): string => {
 		task.kind === "joint"
 			? "alle"
 			: next.responsible.map((id) => participantName(state, id)).join(", ")
-	return `\nAls Nächstes: ${escapeHtml(who)}, ${formatRelativeDate(next.date, today)}.`
+	return `\nNächstes Mal: ${escapeHtml(who)}, ${formatRelativeDate(next.date, today)}.`
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +149,12 @@ export const join = (state: State, member: NewMember): Effect.Effect<Transition>
 					p.id === member.id ? { ...p, name: member.name, chatId: member.chatId } : p,
 				),
 			},
-			outbox: [send(member.chatId, "Du bist schon dabei. 🙂 /hilfe zeigt alle Befehle.")],
+			outbox: [
+				sendWithMenu(
+					member.chatId,
+					"Du bist schon dabei. Mehrfach anmelden macht die Aufgaben auch nicht weniger.",
+				),
+			],
 		})
 	}
 	const next: State = {
@@ -153,14 +164,14 @@ export const join = (state: State, member: NewMember): Effect.Effect<Transition>
 	return Effect.succeed({
 		state: next,
 		outbox: [
-			send(
+			sendWithMenu(
 				member.chatId,
-				`Willkommen im Haushalt, ${bold(member.name)}! 🧹\n\nAb jetzt nerve ich dich zuverlässig. /plan zeigt, was ansteht, /hilfe erklärt den Rest.`,
+				`Willkommen, ${bold(member.name)}. Ab jetzt erinnere ich dich an deine Aufgaben, abends gern auch öfter.\n\nDie Knöpfe unten decken das Übliche ab, /hilfe erklärt den Rest.`,
 			),
 			...notifyOthers(
 				next,
 				member.id,
-				`👋 ${bold(member.name)} ist jetzt dabei. Die Rotation wurde neu verteilt – schau mal in /plan.`,
+				`${bold(member.name)} ist jetzt dabei. Die Aufgaben wurden neu verteilt, siehe /plan.`,
 			),
 		],
 	})
@@ -183,7 +194,7 @@ export const complete = (
 		const due = effectiveDueDate(state, task)
 		if (task.kind === "rotating" && !responsibleOn(state, task, due).includes(actor)) {
 			return yield* reject(
-				"Das ist gerade nicht deine Aufgabe. Wenn du sie machen willst: /uebernehmen 🦸",
+				"Das ist gerade nicht deine Aufgabe. Wer unbedingt will, kann sie mit /uebernehmen an sich nehmen.",
 			)
 		}
 
@@ -196,21 +207,25 @@ export const complete = (
 			turn: task.kind === "rotating" ? task.turn + 1 : task.turn,
 			current: freshOccurrence(nextIndex, nthDate(task.anchor, task.cadence, nextIndex)),
 		}
-		const next = updateStats(replaceTask(state, updated), actor, (s) => ({
-			...s,
-			done: s.done + 1,
-		}))
-		const early = daysBetween(today, due) > 0 ? " (sogar früher als nötig 👏)" : ""
-		const forEveryone = task.kind === "joint" ? " – für alle abgehakt" : ""
+		const next = updateStats(
+			{
+				...replaceTask(state, updated),
+				reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
+			},
+			actor,
+			(s) => ({ ...s, done: s.done + 1 }),
+		)
+		const early = daysBetween(today, due) > 0 ? " Sogar vor der Zeit. Respekt." : ""
+		const forEveryone = task.kind === "joint" ? ", damit ist es für alle abgehakt" : ""
 		return {
 			state: next,
-			toast: "✅ Erledigt!",
+			toast: "Erledigt.",
 			outbox: [
-				send(me.chatId, `✅ ${taskLabel(task)} erledigt${early}.${nextUp(next, updated, today)}`),
+				send(me.chatId, `Erledigt: ${taskLabel(task)}.${early}${nextUp(next, updated, today)}`),
 				...notifyOthers(
 					next,
 					actor,
-					`✅ ${bold(me.name)} hat ${taskLabel(task)} erledigt${forEveryone}.${nextUp(next, updated, today)}`,
+					`${bold(me.name)} hat ${taskLabel(task)} erledigt${forEveryone}.${nextUp(next, updated, today)}`,
 				),
 			],
 		}
@@ -227,15 +242,15 @@ export const takeOver = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireCurrent(state, taskId, index)
 		if (task.kind === "joint") {
-			return yield* reject("Gemeinsame Aufgaben macht ihr eh zusammen. 👫")
+			return yield* reject("Gemeinsame Aufgaben macht ihr ohnehin zusammen.")
 		}
 		const due = effectiveDueDate(state, task)
 		const previous = responsibleOn(state, task, due)
 		if (previous.includes(actor)) {
-			return yield* reject("Das ist doch sowieso deine Aufgabe. 😄")
+			return yield* reject("Das ist bereits deine Aufgabe. Doppelt hält hier nicht besser.")
 		}
 		if (!isAvailable(state, actor, due)) {
-			return yield* reject("An dem Tag bist du im Urlaub. 🏖️")
+			return yield* reject("An dem Tag bist du im Urlaub.")
 		}
 		const updated: Task = { ...task, current: { ...task.current, assignee: actor } }
 		const next = updateStats(replaceTask(state, updated), actor, (s) => ({
@@ -245,14 +260,14 @@ export const takeOver = (
 		const when = formatRelativeDate(due, today)
 		return {
 			state: next,
-			toast: "🦸 Übernommen!",
+			toast: "Übernommen.",
 			outbox: [
-				send(me.chatId, `🦸 Du übernimmst ${taskLabel(task)} (${when}). Ehrenhaft!`),
+				send(me.chatId, `Du übernimmst ${taskLabel(task)} (${when}). Freiwillig. Ist notiert.`),
 				...previous.flatMap((id) =>
 					chatOf(next, id).map((chatId) =>
 						send(
 							chatId,
-							`🦸 ${bold(me.name)} übernimmt ${taskLabel(task)} (${when}) für dich. Einfach so. Bedank dich mal.`,
+							`${bold(me.name)} übernimmt ${taskLabel(task)} (${when}) für dich. Einfach so. Ein Dank wäre angebracht.`,
 						),
 					),
 				),
@@ -294,20 +309,20 @@ export const playJoker = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireCurrent(state, taskId, index)
 		if (task.kind === "joint") {
-			return yield* reject("Bei gemeinsamen Aufgaben gibt's keine Joker. 👫")
+			return yield* reject("Bei gemeinsamen Aufgaben gibt es keine Joker.")
 		}
 		const due = effectiveDueDate(state, task)
 		if (!responsibleOn(state, task, due).includes(actor)) {
-			return yield* reject("Joker kannst du nur für deine eigenen Termine einsetzen.")
+			return yield* reject("Joker gelten nur für deine eigenen Termine.")
 		}
 		if (!canStillPlayJoker(due, now)) {
 			return yield* reject(
-				`Zu spät! Joker gehen nur bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag. ⏰`,
+				`Zu spät. Joker gehen nur bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`,
 			)
 		}
 		const joker = playableJokers(state, actor, task, due)[0]
 		if (joker === undefined) {
-			return yield* reject("Du hast keinen einsetzbaren Joker für diese Aufgabe. 🃏")
+			return yield* reject("Du hast keinen einsetzbaren Joker für diese Aufgabe.")
 		}
 		const updated: Task = { ...task, current: { ...task.current, assignee: joker.debtor } }
 		const next = updateStats(
@@ -319,21 +334,221 @@ export const playJoker = (
 		const debtorName = participantName(state, joker.debtor)
 		return {
 			state: next,
-			toast: "🃏 Joker gespielt!",
+			toast: "Joker gespielt.",
 			outbox: [
 				send(
 					me.chatId,
-					`🃏 Joker gespielt! ${bold(debtorName)} macht ${taskLabel(task)} (${when}) für dich. Genieß es.`,
+					`Joker gespielt. ${bold(debtorName)} übernimmt ${taskLabel(task)} (${when}).`,
 				),
 				...chatOf(next, joker.debtor).map((chatId) =>
 					send(
 						chatId,
-						`🃏 ${bold(me.name)} spielt einen Joker aus! Du machst ${taskLabel(task)} (${when}).\nDen hast du dir am ${formatDate(joker.earnedOn)} selbst eingebrockt. 😈`,
+						`${bold(me.name)} hat einen Joker gespielt. Du übernimmst ${taskLabel(task)} (${when}).\nDas ist die Rechnung für den ${formatDate(joker.earnedOn)}.`,
 					),
 				),
 			],
 		}
 	})
+
+// ---------------------------------------------------------------------------
+// One-off reschedule (needs someone else's approval)
+// ---------------------------------------------------------------------------
+
+const requireReschedule = (state: State, requestId: string) =>
+	Option.match(Option.fromUndefinedOr(state.reschedules.find((r) => r.id === requestId)), {
+		onNone: () => reject("Diese Anfrage gibt es nicht mehr."),
+		onSome: Effect.succeed,
+	})
+
+const withoutRequest = (state: State, requestId: string): State => ({
+	...state,
+	reschedules: state.reschedules.filter((r) => r.id !== requestId),
+})
+
+/** Whether `actor` may ask to move the task's current occurrence. */
+export const canReschedule = (state: State, task: Task, actor: ParticipantId): boolean =>
+	task.kind === "joint"
+		? state.participants.some((p) => p.id === actor)
+		: isMine(state, task, actor)
+
+export const requestReschedule = (
+	state: State,
+	actor: ParticipantId,
+	taskId: string,
+	index: number,
+	to: LocalDate,
+	today: LocalDate,
+): Effect.Effect<Transition, Rejected> =>
+	Effect.gen(function* () {
+		const me = yield* requireParticipant(state, actor)
+		const task = yield* requireCurrent(state, taskId, index)
+		if (!canReschedule(state, task, actor)) {
+			return yield* reject("Verschieben kann nur, wer dran ist.")
+		}
+		const from = effectiveDueDate(state, task)
+		if (to < today) {
+			return yield* reject("Der neue Termin liegt in der Vergangenheit.")
+		}
+		if (to === from) {
+			return yield* reject("Das ist bereits der Termin.")
+		}
+		if (daysBetween(today, to) > settings.maxRescheduleDays) {
+			return yield* reject(
+				`Höchstens ${settings.maxRescheduleDays} Tage im Voraus. Alles darüber ist kein Verschieben mehr, sondern Verdrängen.`,
+			)
+		}
+		if (others(state, actor).length === 0) {
+			return yield* reject("Es gibt niemanden, der das genehmigen könnte.")
+		}
+		if (state.reschedules.some((r) => r.taskId === taskId && r.index === index)) {
+			return yield* reject("Für diesen Termin läuft schon eine Anfrage.")
+		}
+		const [id, withId] = allocateId(state, "r")
+		const request: RescheduleRequest = { id, taskId, index, requester: actor, from, to }
+		const next: State = { ...withId, reschedules: [...withId.reschedules, request] }
+		const move = `von ${formatRelativeDate(from, today)} auf ${formatRelativeDate(to, today)}`
+		return {
+			state: next,
+			toast: "Anfrage gestellt.",
+			outbox: [
+				send(
+					me.chatId,
+					`Anfrage gestellt: ${taskLabel(task)} ${move}. Jetzt muss jemand zustimmen.`,
+					column([
+						{
+							text: "Anfrage zurückziehen",
+							data: encodeCallback({ _tag: "RescheduleCancel", requestId: id }),
+						},
+					]),
+				),
+				...others(next, actor).map((p) =>
+					send(p.chatId, `${bold(me.name)} möchte ${taskLabel(task)} ${move} verschieben.`, [
+						[
+							{
+								text: "Genehmigen",
+								data: encodeCallback({ _tag: "RescheduleApprove", requestId: id }),
+							},
+							{
+								text: "Ablehnen",
+								data: encodeCallback({ _tag: "RescheduleReject", requestId: id }),
+							},
+						],
+					]),
+				),
+			],
+		}
+	})
+
+export const approveReschedule = (
+	state: State,
+	actor: ParticipantId,
+	requestId: string,
+	today: LocalDate,
+): Effect.Effect<Transition, Rejected> =>
+	Effect.gen(function* () {
+		const me = yield* requireParticipant(state, actor)
+		const request = yield* requireReschedule(state, requestId)
+		if (request.requester === actor) {
+			return yield* reject("Die eigene Anfrage genehmigen klappt leider nicht.")
+		}
+		const task = Option.getOrUndefined(findTask(state, request.taskId))
+		if (task === undefined || task.current.index !== request.index || request.to < today) {
+			// Stale requests are cleaned up by the midnight rollover.
+			return yield* reject("Die Anfrage ist nicht mehr aktuell.")
+		}
+		const updated: Task = {
+			...task,
+			current: { ...task.current, dueDate: request.to, lastReminder: null },
+		}
+		const next = withoutRequest(replaceTask(state, updated), requestId)
+		const when = `${formatRelativeDate(request.to, today)} (${formatDate(request.to, today)})`
+		return {
+			state: next,
+			toast: "Genehmigt.",
+			outbox: [
+				send(me.chatId, `Genehmigt. ${taskLabel(task)} ist jetzt ${when} fällig.`),
+				...chatOf(next, request.requester).map((chatId) =>
+					send(
+						chatId,
+						`${bold(me.name)} hat zugestimmt. ${taskLabel(task)} ist jetzt ${when} fällig.`,
+					),
+				),
+			],
+		}
+	})
+
+export const rejectReschedule = (
+	state: State,
+	actor: ParticipantId,
+	requestId: string,
+	today: LocalDate,
+): Effect.Effect<Transition, Rejected> =>
+	Effect.gen(function* () {
+		const me = yield* requireParticipant(state, actor)
+		const request = yield* requireReschedule(state, requestId)
+		if (request.requester === actor) {
+			return yield* reject("Zum Zurückziehen bitte „Anfrage zurückziehen“ nehmen.")
+		}
+		const name = Option.match(findTask(state, request.taskId), {
+			onNone: () => "die Aufgabe",
+			onSome: taskLabel,
+		})
+		const next = withoutRequest(state, requestId)
+		return {
+			state: next,
+			toast: "Abgelehnt.",
+			outbox: [
+				send(
+					me.chatId,
+					`Abgelehnt. ${name} bleibt ${formatRelativeDate(request.from, today)} fällig.`,
+				),
+				...chatOf(next, request.requester).map((chatId) =>
+					send(
+						chatId,
+						`${bold(me.name)} hat abgelehnt. ${name} bleibt ${formatRelativeDate(request.from, today)} fällig.`,
+					),
+				),
+			],
+		}
+	})
+
+export const cancelReschedule = (
+	state: State,
+	actor: ParticipantId,
+	requestId: string,
+): Effect.Effect<Transition, Rejected> =>
+	Effect.gen(function* () {
+		const me = yield* requireParticipant(state, actor)
+		const request = yield* requireReschedule(state, requestId)
+		if (request.requester !== actor) {
+			return yield* reject("Nur wer gefragt hat, kann die Anfrage zurückziehen.")
+		}
+		const name = Option.match(findTask(state, request.taskId), {
+			onNone: () => "die Aufgabe",
+			onSome: taskLabel,
+		})
+		const next = withoutRequest(state, requestId)
+		return {
+			state: next,
+			toast: "Zurückgezogen.",
+			outbox: [
+				send(me.chatId, `Anfrage zurückgezogen. ${name} bleibt, wo es war.`),
+				...notifyOthers(next, actor, `${bold(me.name)} hat die Anfrage zu ${name} zurückgezogen.`),
+			],
+		}
+	})
+
+/** The dates offered when picking a new date: the next days, minus the current due date. */
+export const rescheduleOptions = (
+	state: State,
+	task: Task,
+	today: LocalDate,
+): ReadonlyArray<LocalDate> => {
+	const due = effectiveDueDate(state, task)
+	return Array.from({ length: settings.maxRescheduleDays + 1 }, (_, i) => addDays(today, i))
+		.filter((d) => d !== due)
+		.slice(0, 9)
+}
 
 // ---------------------------------------------------------------------------
 // Vacation
@@ -358,22 +573,22 @@ export const requestVacation = (
 	Effect.gen(function* () {
 		const me = yield* requireParticipant(state, actor)
 		if (from < today) {
-			return yield* reject("Urlaub in der Vergangenheit? Netter Versuch. 🙃")
+			return yield* reject("Urlaub in der Vergangenheit lässt sich leider nicht mehr beantragen.")
 		}
 		if (to < from) {
-			return yield* reject("Das Ende liegt vor dem Anfang. 🤔")
+			return yield* reject("Das Ende liegt vor dem Anfang. Das wird schwierig.")
 		}
 		if (daysBetween(from, to) + 1 > settings.maxVacationDays) {
-			return yield* reject(`Maximal ${settings.maxVacationDays} Tage am Stück.`)
+			return yield* reject(`Höchstens ${settings.maxVacationDays} Tage am Stück.`)
 		}
 		if (others(state, actor).length === 0) {
-			return yield* reject("Es gibt niemanden, der deinen Urlaub genehmigen könnte.")
+			return yield* reject("Es gibt niemanden, der den Urlaub genehmigen könnte.")
 		}
 		const overlapping = state.vacations.some(
 			(v) => v.participant === actor && v.from <= to && from <= v.to,
 		)
 		if (overlapping) {
-			return yield* reject("Da hast du schon einen Urlaub (oder Antrag), der sich überschneidet.")
+			return yield* reject("Da gibt es schon einen Urlaub oder Antrag, der sich überschneidet.")
 		}
 		const [id, withId] = allocateId(state, "v")
 		const vacation: Vacation = { id, participant: actor, from, to, status: "pending" }
@@ -384,10 +599,10 @@ export const requestVacation = (
 			outbox: [
 				send(
 					me.chatId,
-					`🏖️ Urlaubsantrag für ${range} gestellt. Jetzt muss jemand zustimmen.`,
+					`Urlaubsantrag für ${range} gestellt. Jetzt muss jemand zustimmen.`,
 					column([
 						{
-							text: "❌ Antrag zurückziehen",
+							text: "Antrag zurückziehen",
 							data: encodeCallback({ _tag: "VacationCancel", vacationId: id }),
 						},
 					]),
@@ -395,15 +610,15 @@ export const requestVacation = (
 				...others(next, actor).map((p) =>
 					send(
 						p.chatId,
-						`🏖️ ${bold(me.name)} möchte Urlaub: ${range}.\nIn der Zeit übernimmst du die Aufgaben – ohne Joker.`,
+						`${bold(me.name)} möchte Urlaub: ${range}. In der Zeit fallen die Aufgaben an dich, ohne Joker.`,
 						[
 							[
 								{
-									text: "✅ Genehmigen",
+									text: "Genehmigen",
 									data: encodeCallback({ _tag: "VacationApprove", vacationId: id }),
 								},
 								{
-									text: "❌ Ablehnen",
+									text: "Ablehnen",
 									data: encodeCallback({ _tag: "VacationReject", vacationId: id }),
 								},
 							],
@@ -424,10 +639,10 @@ export const approveVacation = (
 		const me = yield* requireParticipant(state, actor)
 		const vacation = yield* requireVacation(state, vacationId)
 		if (vacation.participant === actor) {
-			return yield* reject("Den eigenen Urlaub genehmigen? So läuft das nicht. 😏")
+			return yield* reject("Den eigenen Urlaub genehmigen ist ein interessanter Ansatz. Nein.")
 		}
 		if (vacation.status === "approved") {
-			return yield* reject("Ist schon genehmigt. 👍")
+			return yield* reject("Ist schon genehmigt.")
 		}
 		const next: State = {
 			...state,
@@ -438,19 +653,19 @@ export const approveVacation = (
 		const range = vacationRange(vacation, today)
 		return {
 			state: next,
-			toast: "✅ Genehmigt",
+			toast: "Genehmigt.",
 			outbox: [
 				send(
 					me.chatId,
-					`✅ Urlaub von ${bold(participantName(state, vacation.participant))} (${range}) genehmigt.`,
+					`Urlaub von ${bold(participantName(state, vacation.participant))} (${range}) genehmigt.`,
 				),
 				...chatOf(next, vacation.participant).map((chatId) =>
 					send(
 						chatId,
-						`🌴 ${bold(me.name)} hat deinen Urlaub (${range}) genehmigt. Gute Erholung!`,
+						`${bold(me.name)} hat deinen Urlaub (${range}) genehmigt. Erhol dich.`,
 						column([
 							{
-								text: "❌ Urlaub absagen",
+								text: "Urlaub absagen",
 								data: encodeCallback({ _tag: "VacationCancel", vacationId }),
 							},
 						]),
@@ -470,22 +685,22 @@ export const rejectVacation = (
 		const me = yield* requireParticipant(state, actor)
 		const vacation = yield* requireVacation(state, vacationId)
 		if (vacation.participant === actor) {
-			return yield* reject("Zum Zurückziehen nimm „Antrag zurückziehen“.")
+			return yield* reject("Zum Zurückziehen bitte „Antrag zurückziehen“ nehmen.")
 		}
 		if (vacation.status === "approved") {
 			return yield* reject(
-				"Der Urlaub ist schon genehmigt – absagen kann ihn nur, wer ihn beantragt hat.",
+				"Der Urlaub ist schon genehmigt. Absagen kann ihn nur, wer ihn beantragt hat.",
 			)
 		}
 		const next: State = { ...state, vacations: state.vacations.filter((v) => v.id !== vacationId) }
 		const range = vacationRange(vacation, today)
 		return {
 			state: next,
-			toast: "❌ Abgelehnt",
+			toast: "Abgelehnt.",
 			outbox: [
-				send(me.chatId, `❌ Urlaubsantrag (${range}) abgelehnt.`),
+				send(me.chatId, `Urlaubsantrag (${range}) abgelehnt.`),
 				...chatOf(next, vacation.participant).map((chatId) =>
-					send(chatId, `❌ ${bold(me.name)} hat deinen Urlaubsantrag (${range}) abgelehnt.`),
+					send(chatId, `${bold(me.name)} hat deinen Urlaubsantrag (${range}) abgelehnt.`),
 				),
 			],
 		}
@@ -508,10 +723,10 @@ export const cancelVacation = (
 		const what = vacation.status === "approved" ? "Urlaub" : "Urlaubsantrag"
 		return {
 			state: next,
-			toast: "Abgesagt",
+			toast: "Abgesagt.",
 			outbox: [
-				send(me.chatId, `🗑️ ${what} (${range}) abgesagt. Deine Aufgaben sind wieder deine.`),
-				...notifyOthers(next, actor, `🗑️ ${bold(me.name)} hat den ${what} (${range}) abgesagt.`),
+				send(me.chatId, `${what} (${range}) abgesagt. Deine Aufgaben sind wieder deine.`),
+				...notifyOthers(next, actor, `${bold(me.name)} hat den ${what} (${range}) abgesagt.`),
 			],
 		}
 	})
@@ -522,7 +737,6 @@ export const cancelVacation = (
 
 export interface NewTask {
 	readonly name: string
-	readonly emoji: string
 	readonly cadence: Cadence
 	readonly kind: TaskKind
 	readonly firstDue: LocalDate
@@ -534,7 +748,6 @@ export const createTask = (state: State, spec: NewTask): [Task, State] => {
 	const task: Task = {
 		id,
 		name: spec.name,
-		emoji: spec.emoji,
 		kind: spec.kind,
 		cadence: spec.cadence,
 		annoyance: clampLevel(spec.annoyance),
@@ -562,15 +775,20 @@ export const addTask = (
 			return yield* reject("Eine Aufgabe mit dem Namen gibt es schon.")
 		}
 		if (spec.firstDue < today) {
-			return yield* reject("Der erste Termin darf nicht in der Vergangenheit liegen.")
+			return yield* reject(
+				"Der erste Termin liegt in der Vergangenheit. Der wäre dann schon verpasst.",
+			)
 		}
 		const [task, next] = createTask(state, { ...spec, name })
-		const text = `🆕 ${taskLabel(task)} – ${formatCadence(task.cadence)}${task.kind === "joint" ? ", gemeinsam 👫" : ""}, zum ersten Mal ${formatRelativeDate(task.anchor, today)}.`
+		const text = `${taskLabel(task)}, ${formatCadence(task.cadence)}${task.kind === "joint" ? ", gemeinsam" : ""}, zum ersten Mal ${formatRelativeDate(task.anchor, today)}.`
 		return {
 			state: next,
 			outbox: [
-				send(me.chatId, `${text}\nNervigkeit: ${task.annoyance}/10 (ändern mit /nervig)`),
-				...notifyOthers(next, actor, `${bold(me.name)} hat eine neue Aufgabe angelegt:\n${text}`),
+				send(
+					me.chatId,
+					`Neue Aufgabe: ${text}\nNervigkeit ${task.annoyance}/10, einstellbar mit /nervig.`,
+				),
+				...notifyOthers(next, actor, `${bold(me.name)} hat eine neue Aufgabe angelegt: ${text}`),
 			],
 		}
 	})
@@ -587,13 +805,14 @@ export const deleteTask = (
 			...state,
 			tasks: state.tasks.filter((t) => t.id !== taskId),
 			jokers: state.jokers.filter((j) => j.taskId !== taskId),
+			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
 		}
 		return {
 			state: next,
-			toast: "🗑️ Gelöscht",
+			toast: "Gelöscht.",
 			outbox: [
-				send(me.chatId, `🗑️ ${taskLabel(task)} gelöscht.`),
-				...notifyOthers(next, actor, `🗑️ ${bold(me.name)} hat ${taskLabel(task)} gelöscht.`),
+				send(me.chatId, `${taskLabel(task)} gelöscht.`),
+				...notifyOthers(next, actor, `${bold(me.name)} hat ${taskLabel(task)} gelöscht.`),
 			],
 		}
 	})
@@ -609,18 +828,19 @@ export const setAnnoyance = (
 		const task = yield* requireTask(state, taskId)
 		const annoyance = clampLevel(level)
 		const next = replaceTask(state, { ...task, annoyance })
+		const remark = annoyance < task.annoyance ? " Nach unten. Interessant." : ""
 		return {
 			state: next,
-			toast: `🔔 Nervigkeit ${annoyance}/10 gespeichert`,
+			toast: `Nervigkeit ${annoyance}/10 gespeichert.`,
 			outbox: [
 				send(
 					me.chatId,
-					`🔔 ${taskLabel(task)}: Nervigkeit ${task.annoyance} → ${annoyance}\n\n${formatPreview(annoyance)}`,
+					`${taskLabel(task)}: Nervigkeit ${task.annoyance} → ${annoyance}.\n\n${formatPreview(annoyance)}`,
 				),
 				...notifyOthers(
 					next,
 					actor,
-					`🔔 ${bold(me.name)} hat die Nervigkeit von ${taskLabel(task)} von ${task.annoyance} auf ${annoyance} gestellt.`,
+					`${bold(me.name)} hat die Nervigkeit von ${taskLabel(task)} von ${task.annoyance} auf ${annoyance} gestellt.${remark}`,
 				),
 			],
 		}
@@ -636,13 +856,16 @@ export const setCadence = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireTask(state, taskId)
 		// Re-anchor the grid on the pending occurrence so its date stays put.
-		const next = replaceTask(state, {
-			...task,
-			cadence,
-			anchor: task.current.dueDate,
-			current: { ...task.current, index: 0 },
-		})
-		const text = `🔁 ${taskLabel(task)}: ${formatCadence(task.cadence)} → ${formatCadence(cadence)}`
+		const next: State = {
+			...replaceTask(state, {
+				...task,
+				cadence,
+				anchor: task.current.dueDate,
+				current: { ...task.current, index: 0 },
+			}),
+			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
+		}
+		const text = `${taskLabel(task)}: ${formatCadence(task.cadence)} → ${formatCadence(cadence)}.`
 		return {
 			state: next,
 			outbox: [send(me.chatId, text), ...notifyOthers(next, actor, `${bold(me.name)}: ${text}`)],
@@ -660,14 +883,17 @@ export const setNextDate = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireTask(state, taskId)
 		if (date < today) {
-			return yield* reject("Der Termin darf nicht in der Vergangenheit liegen.")
+			return yield* reject("Der Termin liegt in der Vergangenheit.")
 		}
-		const next = replaceTask(state, {
-			...task,
-			anchor: date,
-			current: { ...task.current, index: 0, dueDate: date, misses: 0, lastReminder: null },
-		})
-		const text = `📅 ${taskLabel(task)} ist jetzt ${formatRelativeDate(date, today)} (${formatDate(date, today)}) fällig.`
+		const next: State = {
+			...replaceTask(state, {
+				...task,
+				anchor: date,
+				current: { ...task.current, index: 0, dueDate: date, misses: 0, lastReminder: null },
+			}),
+			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
+		}
+		const text = `${taskLabel(task)} ist jetzt ${formatRelativeDate(date, today)} fällig (${formatDate(date, today)}), und von da an im gewohnten Rhythmus.`
 		return {
 			state: next,
 			outbox: [send(me.chatId, text), ...notifyOthers(next, actor, `${bold(me.name)}: ${text}`)],

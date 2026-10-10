@@ -18,6 +18,8 @@ export const settings = {
 	planHorizonDays: 14,
 	/** How many days ahead tasks are offered in the "done" / "take over" pickers. */
 	pickerHorizonDays: 7,
+	/** How far ahead a one-off reschedule may move a task. */
+	maxRescheduleDays: 14,
 	/** Upper bound for a single vacation request. */
 	maxVacationDays: 90,
 } as const

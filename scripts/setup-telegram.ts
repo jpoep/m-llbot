@@ -22,13 +22,13 @@ await api.setWebhook(url, {
 })
 await api.setMyCommands([...COMMANDS])
 await api.setMyDescription(
-	"Erinnert eure WG an Haushaltsaufgaben – und wird abends immer nerviger, bis sie erledigt sind. 🧹",
+	"Erinnert eure WG an Haushaltsaufgaben und wird abends zunehmend lästig, bis sie erledigt sind.",
 )
-await api.setMyShortDescription("Der nervigste Haushalts-Bot der Welt.")
+await api.setMyShortDescription("Haushaltsaufgaben, mit Nachdruck.")
 
 const me = await api.getMe()
 const info = await api.getWebhookInfo()
-console.log(`✅ Webhook set: ${info.url} (pending updates: ${info.pending_update_count})`)
+console.log(`Webhook set: ${info.url} (pending updates: ${info.pending_update_count})`)
 console.log(
-	`🔑 Invite link (only share with roommates): https://t.me/${me.username}?start=${joinCode}`,
+	`Invite link (only share with roommates): https://t.me/${me.username}?start=${joinCode}`,
 )

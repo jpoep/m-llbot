@@ -4,14 +4,19 @@ import { Bot, type Context, InlineKeyboard } from "grammy"
 import type { BotCommand } from "grammy/types"
 import {
 	addTask,
+	approveReschedule,
 	approveVacation,
+	cancelReschedule,
 	cancelVacation,
+	canReschedule,
 	complete,
 	deleteTask,
 	join,
 	playJoker,
 	type Rejected,
+	rejectReschedule,
 	rejectVacation,
+	requestReschedule,
 	requestVacation,
 	setAnnoyance,
 	setCadence,
@@ -27,10 +32,11 @@ import {
 	parseDateChange,
 	parseLevel,
 	parseNewTask,
+	parseRescheduleArgs,
 	parseVacation,
 } from "../domain/commands.ts"
 import { ParticipantId, type State } from "../domain/model.ts"
-import type { Keyboard } from "../domain/outbox.ts"
+import { type Keyboard, MENU } from "../domain/outbox.ts"
 import { findParticipant, findTask } from "../domain/schedule.ts"
 import { HELP_TEXT } from "../domain/texts.ts"
 import {
@@ -42,6 +48,8 @@ import {
 	donePicker,
 	jokerView,
 	planView,
+	rescheduleDatePicker,
+	reschedulePicker,
 	statsView,
 	takeOverPicker,
 	tasksView,
@@ -51,7 +59,7 @@ import {
 } from "../domain/views.ts"
 import { readState, transact } from "../services/Household.ts"
 import type { StateStore, StoreError } from "../services/StateStore.ts"
-import type { Telegram } from "../services/Telegram.ts"
+import { mainMenu, type Telegram } from "../services/Telegram.ts"
 
 export type AppServices = StateStore | Telegram
 export type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, unknown>
@@ -63,15 +71,16 @@ export const COMMANDS: ReadonlyArray<BotCommand> = [
 	{ command: "heute", description: "Was heute ansteht" },
 	{ command: "plan", description: "Die nächsten zwei Wochen" },
 	{ command: "erledigt", description: "Aufgabe abhaken" },
+	{ command: "verschieben", description: "Einen Termin einmalig verschieben" },
 	{ command: "uebernehmen", description: "Freiwillig eine Aufgabe übernehmen" },
 	{ command: "joker", description: "Joker ansehen und einsetzen" },
 	{ command: "urlaub", description: "Urlaub beantragen oder ansehen" },
 	{ command: "punkte", description: "Statistik" },
 	{ command: "aufgaben", description: "Alle Aufgaben" },
 	{ command: "neu", description: "Neue Aufgabe: Name | Rhythmus | gemeinsam | ab Datum" },
-	{ command: "rhythmus", description: "Rhythmus ändern: Nr | Rhythmus" },
-	{ command: "termin", description: "Nächsten Termin verschieben: Nr | Datum" },
-	{ command: "nervig", description: "Nervigkeit einstellen (mit Vorschau)" },
+	{ command: "rhythmus", description: "Rhythmus dauerhaft ändern: Nr | Rhythmus" },
+	{ command: "termin", description: "Raster dauerhaft verlegen: Nr | Datum" },
+	{ command: "nervig", description: "Nervigkeit einstellen, mit Vorschau" },
 	{ command: "vorschau", description: "Vorschau einer Nervigkeitsstufe (0–10)" },
 	{ command: "loeschen", description: "Aufgabe löschen" },
 	{ command: "hilfe", description: "Alle Befehle und Regeln" },
@@ -103,6 +112,9 @@ const telegramCall = (call: () => Promise<unknown>): Effect.Effect<void> =>
 const reply = (ctx: Context, view: View): Effect.Effect<void> =>
 	telegramCall(() => ctx.reply(view.text, { ...HTML, ...markup(view.keyboard) }))
 
+const replyWithMenu = (ctx: Context, text: string): Effect.Effect<void> =>
+	telegramCall(() => ctx.reply(text, { ...HTML, reply_markup: mainMenu() }))
+
 const editOrReply = (ctx: Context, view: View): Effect.Effect<void> =>
 	telegramCall(() =>
 		ctx.callbackQuery?.message
@@ -120,6 +132,8 @@ const removeKeyboard = (ctx: Context): Effect.Effect<void> =>
 
 const actorOf = (ctx: Context): ParticipantId => ParticipantId.make(ctx.from?.id ?? 0)
 
+const NOT_A_MEMBER = "Du gehörst nicht zu diesem Haushalt. Ohne Einladungslink bleibt das so."
+
 /** Loads the state and makes sure the sender belongs to the household. */
 const memberView = (
 	ctx: Context,
@@ -129,10 +143,7 @@ const memberView = (
 		const { state, now } = yield* readState
 		const actor = actorOf(ctx)
 		if (Option.isNone(findParticipant(state, actor))) {
-			return yield* reply(ctx, {
-				text: "Du bist noch nicht dabei. Frag nach dem Einladungslink. 🔑",
-				keyboard: [],
-			})
+			return yield* reply(ctx, { text: NOT_A_MEMBER, keyboard: [] })
 		}
 		yield* reply(ctx, render(state, actor, now))
 	})
@@ -141,14 +152,35 @@ const memberView = (
 const runButton = (
 	ctx: Context,
 	apply: (state: State, now: LocalMoment) => Effect.Effect<Transition, Rejected>,
-	after?: (transition: Transition) => Handler,
+	after?: Handler,
 ): Handler =>
 	Effect.gen(function* () {
 		const transition = yield* transact(apply)
-		yield* toast(ctx, transition.toast ?? "👍")
+		yield* toast(ctx, transition.toast ?? "OK")
 		if (after) {
-			yield* after(transition)
+			yield* after
 		}
+	})
+
+/** Buttons that only open another view (no state change). */
+const showTaskView = (
+	ctx: Context,
+	taskId: string,
+	render: (state: State, actor: ParticipantId, now: LocalMoment) => Option.Option<View>,
+): Handler =>
+	Effect.gen(function* () {
+		const { state, now } = yield* readState
+		const actor = actorOf(ctx)
+		if (Option.isNone(findParticipant(state, actor))) {
+			return yield* toast(ctx, NOT_A_MEMBER, true)
+		}
+		if (Option.isNone(findTask(state, taskId))) {
+			return yield* toast(ctx, "Diese Aufgabe gibt es nicht mehr.", true)
+		}
+		yield* Option.match(render(state, actor, now), {
+			onNone: () => toast(ctx, "Das ist nicht mehr aktuell.", true),
+			onSome: (v) => Effect.andThen(toast(ctx, ""), editOrReply(ctx, v)),
+		})
 	})
 
 const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
@@ -160,48 +192,79 @@ const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
 			return runButton(ctx, (s, now) => takeOver(s, actor, action.taskId, action.index, now.date))
 		case "Joker":
 			return runButton(ctx, (s, now) => playJoker(s, actor, action.taskId, action.index, now))
+		case "RescheduleStart":
+			return showTaskView(ctx, action.taskId, (s, a, now) =>
+				Option.flatMap(findTask(s, action.taskId), (task) =>
+					task.current.index === action.index && canReschedule(s, task, a)
+						? Option.some(rescheduleDatePicker(s, task, now.date))
+						: Option.none(),
+				),
+			)
+		case "ReschedulePick":
+			return runButton(
+				ctx,
+				(s, now) => requestReschedule(s, actor, action.taskId, action.index, action.date, now.date),
+				removeKeyboard(ctx),
+			)
+		case "RescheduleApprove":
+			return runButton(
+				ctx,
+				(s, now) => approveReschedule(s, actor, action.requestId, now.date),
+				removeKeyboard(ctx),
+			)
+		case "RescheduleReject":
+			return runButton(
+				ctx,
+				(s, now) => rejectReschedule(s, actor, action.requestId, now.date),
+				removeKeyboard(ctx),
+			)
+		case "RescheduleCancel":
+			return runButton(
+				ctx,
+				(s) => cancelReschedule(s, actor, action.requestId),
+				removeKeyboard(ctx),
+			)
 		case "VacationApprove":
-			return runButton(ctx, (s, now) => approveVacation(s, actor, action.vacationId, now.date))
+			return runButton(
+				ctx,
+				(s, now) => approveVacation(s, actor, action.vacationId, now.date),
+				removeKeyboard(ctx),
+			)
 		case "VacationReject":
-			return runButton(ctx, (s, now) => rejectVacation(s, actor, action.vacationId, now.date))
+			return runButton(
+				ctx,
+				(s, now) => rejectVacation(s, actor, action.vacationId, now.date),
+				removeKeyboard(ctx),
+			)
 		case "VacationCancel":
-			return runButton(ctx, (s, now) => cancelVacation(s, actor, action.vacationId, now.date))
+			return runButton(
+				ctx,
+				(s, now) => cancelVacation(s, actor, action.vacationId, now.date),
+				removeKeyboard(ctx),
+			)
 		case "AnnoyancePick":
+			return showTaskView(ctx, action.taskId, (s) =>
+				Option.map(findTask(s, action.taskId), annoyanceLevelPicker),
+			)
 		case "AnnoyancePreview":
-		case "DeleteAsk":
-			return Effect.gen(function* () {
-				const { state } = yield* readState
-				const task = findTask(state, action.taskId)
-				if (Option.isNone(findParticipant(state, actor))) {
-					return yield* toast(ctx, "Du bist noch nicht dabei.", true)
-				}
-				if (Option.isNone(task)) {
-					return yield* toast(ctx, "Diese Aufgabe gibt es nicht mehr.", true)
-				}
-				yield* toast(ctx, "")
-				if (action._tag === "AnnoyancePick") {
-					return yield* editOrReply(ctx, annoyanceLevelPicker(task.value))
-				}
-				if (action._tag === "AnnoyancePreview") {
-					return yield* editOrReply(ctx, annoyancePreviewView(task.value)(action.level))
-				}
-				return yield* editOrReply(ctx, deleteConfirm(task.value))
-			})
+			return showTaskView(ctx, action.taskId, (s) =>
+				Option.map(findTask(s, action.taskId), (task) => annoyancePreviewView(task)(action.level)),
+			)
 		case "AnnoyanceSave":
 			return runButton(
 				ctx,
 				(s) => setAnnoyance(s, actor, action.taskId, action.level),
-				() => removeKeyboard(ctx),
+				removeKeyboard(ctx),
+			)
+		case "DeleteAsk":
+			return showTaskView(ctx, action.taskId, (s) =>
+				Option.map(findTask(s, action.taskId), deleteConfirm),
 			)
 		case "DeleteConfirm":
-			return runButton(
-				ctx,
-				(s) => deleteTask(s, actor, action.taskId),
-				() => removeKeyboard(ctx),
-			)
+			return runButton(ctx, (s) => deleteTask(s, actor, action.taskId), removeKeyboard(ctx))
 		case "Dismiss":
 			return Effect.andThen(
-				toast(ctx, "OK"),
+				toast(ctx, "Abgebrochen."),
 				telegramCall(() => ctx.deleteMessage()),
 			)
 	}
@@ -212,21 +275,17 @@ const execute =
 	(runtime: AppRuntime) =>
 	(ctx: Context, handler: Handler): Promise<void> => {
 		const isButton = ctx.callbackQuery !== undefined
+		const failed = "Da ist technisch etwas schiefgelaufen. Nochmal versuchen hilft manchmal."
 		const program = handler.pipe(
 			Effect.catchTag("Rejected", (rejected) =>
 				isButton
 					? toast(ctx, rejected.reason, true)
-					: reply(ctx, { text: `🙅 ${rejected.reason}`, keyboard: [] }),
+					: reply(ctx, { text: rejected.reason, keyboard: [] }),
 			),
 			Effect.catchTag("StoreError", (error) =>
 				Effect.andThen(
 					Effect.logError("State store failure", Cause.fail(error.cause)),
-					isButton
-						? toast(ctx, "Da ist technisch was schiefgelaufen. Versuch's nochmal.", true)
-						: reply(ctx, {
-								text: "💥 Da ist technisch was schiefgelaufen. Versuch's nochmal.",
-								keyboard: [],
-							}),
+					isButton ? toast(ctx, failed, true) : reply(ctx, { text: failed, keyboard: [] }),
 				),
 			),
 			Effect.catchCause((cause) => Effect.logError("Handler crashed", cause)),
@@ -253,7 +312,7 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 	safe
 		.chatType(["group", "supergroup", "channel"])
 		.use((ctx) =>
-			ctx.reply("Ich arbeite nur im Privatchat. Schreib mir direkt. 🙂").then(() => undefined),
+			ctx.reply("Ich arbeite nur im Privatchat. Gruppen sind mir zu laut.").then(() => undefined),
 		)
 	const pm = safe.chatType("private")
 
@@ -262,15 +321,11 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 			ctx,
 			Effect.gen(function* () {
 				const { state } = yield* readState
-				const member = {
-					id: actorOf(ctx),
-					name: ctx.from.first_name,
-					chatId: ctx.chat.id,
-				}
+				const member = { id: actorOf(ctx), name: ctx.from.first_name, chatId: ctx.chat.id }
 				const known = Option.isSome(findParticipant(state, member.id))
 				if (!(known || safeEquals(ctx.match.trim(), joinCode))) {
 					return yield* reply(ctx, {
-						text: "👋 Hi! Ich bin ein privater Haushalts-Bot. Ohne Einladungslink kann ich leider nichts für dich tun. 🔑",
+						text: "Das hier ist ein privater Haushalts-Bot. Ohne Einladungslink passiert hier nichts.",
 						keyboard: [],
 					})
 				}
@@ -279,19 +334,52 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 		),
 	)
 
-	pm.command(["hilfe", "help"], (ctx) => ctx.reply(HELP_TEXT, HTML).then(() => undefined))
-	pm.command("heute", (ctx) =>
+	pm.command(["hilfe", "help", "menu"], (ctx) => exec(ctx, replyWithMenu(ctx, HELP_TEXT)))
+
+	const today = (ctx: Context) =>
 		exec(
 			ctx,
 			memberView(ctx, (s, actor, now) => todayView(s, actor, now.date)),
-		),
-	)
-	pm.command("plan", (ctx) =>
+		)
+	const plan = (ctx: Context) =>
 		exec(
 			ctx,
 			memberView(ctx, (s, _, now) => planView(s, now.date)),
-		),
-	)
+		)
+	const done = (ctx: Context) =>
+		exec(
+			ctx,
+			memberView(ctx, (s, actor, now) => donePicker(s, actor, now.date)),
+		)
+	const reschedule = (ctx: Context) =>
+		exec(
+			ctx,
+			memberView(ctx, (s, actor, now) => reschedulePicker(s, actor, now.date)),
+		)
+	const takeOverMenu = (ctx: Context) =>
+		exec(
+			ctx,
+			memberView(ctx, (s, actor, now) => takeOverPicker(s, actor, now.date)),
+		)
+	const jokers = (ctx: Context) =>
+		exec(
+			ctx,
+			memberView(ctx, (s, actor, now) => jokerView(s, actor, now)),
+		)
+
+	// Persistent menu buttons send their label as plain text.
+	pm.hears(MENU.today, today)
+	pm.hears(MENU.plan, plan)
+	pm.hears(MENU.done, done)
+	pm.hears(MENU.reschedule, reschedule)
+	pm.hears(MENU.takeOver, takeOverMenu)
+	pm.hears(MENU.jokers, jokers)
+
+	pm.command("heute", today)
+	pm.command("plan", plan)
+	pm.command("erledigt", done)
+	pm.command("uebernehmen", takeOverMenu)
+	pm.command("joker", jokers)
 	pm.command("aufgaben", (ctx) =>
 		exec(
 			ctx,
@@ -302,24 +390,6 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 		exec(
 			ctx,
 			memberView(ctx, (s) => statsView(s)),
-		),
-	)
-	pm.command("erledigt", (ctx) =>
-		exec(
-			ctx,
-			memberView(ctx, (s, actor, now) => donePicker(s, actor, now.date)),
-		),
-	)
-	pm.command("uebernehmen", (ctx) =>
-		exec(
-			ctx,
-			memberView(ctx, (s, actor, now) => takeOverPicker(s, actor, now.date)),
-		),
-	)
-	pm.command("joker", (ctx) =>
-		exec(
-			ctx,
-			memberView(ctx, (s, actor, now) => jokerView(s, actor, now)),
 		),
 	)
 	pm.command("nervig", (ctx) =>
@@ -334,6 +404,21 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 			memberView(ctx, (s) => deletePicker(s)),
 		),
 	)
+
+	pm.command("verschieben", (ctx) => {
+		if (ctx.match.trim() === "") {
+			return reschedule(ctx)
+		}
+		const actor = actorOf(ctx)
+		return exec(
+			ctx,
+			transact((s, now) =>
+				Effect.flatMap(parseRescheduleArgs(s, ctx.match, now.date), ([task, date]) =>
+					requestReschedule(s, actor, task.id, task.current.index, date, now.date),
+				),
+			),
+		)
+	})
 
 	pm.command("vorschau", (ctx) =>
 		exec(
@@ -402,14 +487,17 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 		const action = decodeCallback(ctx.callbackQuery.data)
 		if (Option.isNone(action)) {
 			return ctx
-				.answerCallbackQuery({ text: "Diesen Knopf kenne ich nicht (mehr)." })
+				.answerCallbackQuery({ text: "Diesen Knopf kenne ich nicht mehr." })
 				.then(() => undefined)
 		}
 		return exec(ctx, handleCallback(ctx, action.value))
 	})
 
 	pm.on("message", (ctx) =>
-		ctx.reply("Ich verstehe nur Befehle. /hilfe zeigt, welche. 🤖").then(() => undefined),
+		exec(
+			ctx,
+			replyWithMenu(ctx, "Freitext verstehe ich nicht. Die Knöpfe unten schon, /hilfe auch."),
+		),
 	)
 
 	return bot

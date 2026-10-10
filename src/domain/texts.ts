@@ -8,21 +8,21 @@ export const escapeHtml = (text: string): string =>
 
 export const bold = (text: string): string => `<b>${escapeHtml(text)}</b>`
 
-export const taskLabel = (task: Pick<Task, "emoji" | "name">): string =>
-	`${task.emoji} ${escapeHtml(task.name)}`
+export const taskLabel = (task: Pick<Task, "name">): string => bold(task.name)
 
-export const taskButtonLabel = (task: Pick<Task, "emoji" | "name">): string =>
-	`${task.emoji} ${task.name}`
+export const taskButtonLabel = (task: Pick<Task, "name">): string => task.name
 
 export const taskSummary = (task: Task): string =>
-	`${taskLabel(task)} – ${formatCadence(task.cadence)}${task.kind === "joint" ? ", gemeinsam 👫" : ""}, Nervigkeit ${task.annoyance}/10`
+	`${taskLabel(task)}, ${formatCadence(task.cadence)}${task.kind === "joint" ? ", gemeinsam" : ""}, Nervigkeit ${task.annoyance}/10`
 
 export const overdueSuffix = (misses: number): string => {
 	if (misses === 0) {
 		return ""
 	}
-	return misses === 1 ? " 🔥 seit gestern überfällig" : ` 🔥 seit ${misses} Tagen überfällig`
+	return misses === 1 ? " (seit gestern überfällig)" : ` (seit ${misses} Tagen überfällig)`
 }
+
+export const minutes = (count: number): string => (count === 1 ? "1 Minute" : `${count} Minuten`)
 
 export const pick = <A>(options: ReadonlyArray<A>, seed: number): A => {
 	const value = options[Math.abs(Math.trunc(seed)) % options.length]
@@ -32,15 +32,15 @@ export const pick = <A>(options: ReadonlyArray<A>, seed: number): A => {
 	return value
 }
 
-/** Escalating evening reminder headlines, keyed by minutes left until midnight. */
+/** Evening reminder headlines, keyed by the time left until midnight. Drier the later it gets. */
 export const reminderHeadline = (minutesLeft: number, seed: number): string => {
 	const hours = Math.floor(minutesLeft / 60)
 	if (minutesLeft > 180) {
 		return pick(
 			[
-				"⏰ Kleine Erinnerung für heute:",
-				"⏰ Nur damit's nicht untergeht:",
-				"⏰ Der Abend ist jung, die Aufgabe noch offen:",
+				"Nur zur Erinnerung, falls es untergegangen ist:",
+				"Heute noch fällig. Kein Stress. Noch nicht.",
+				"Der Abend ist lang. Das hier ist trotzdem noch offen:",
 			],
 			seed,
 		)
@@ -48,9 +48,9 @@ export const reminderHeadline = (minutesLeft: number, seed: number): string => {
 	if (minutesLeft > 60) {
 		return pick(
 			[
-				`😤 Noch ${hours} Stunden bis Mitternacht. Das hier ist immer noch offen:`,
-				"😤 Es wird langsam Zeit:",
-				"😤 Hallo?? Immer noch offen:",
+				`Noch ${hours} Stunden bis Mitternacht. Weiterhin offen:`,
+				"Ich frage ungern zweimal. Offen ist noch:",
+				"Immer noch offen. Überraschend, ich weiß:",
 			],
 			seed,
 		)
@@ -58,31 +58,33 @@ export const reminderHeadline = (minutesLeft: number, seed: number): string => {
 	if (minutesLeft > 15) {
 		return pick(
 			[
-				`🚨 Noch ${minutesLeft} Minuten! Immer noch nicht erledigt:`,
-				`🚨 ${minutesLeft} Minuten bis zur Strafe:`,
-				"🚨 Die Uhr tickt. Laut. Offen ist noch:",
+				`Noch ${minutes(minutesLeft)}. Offen ist weiterhin:`,
+				`${minutes(minutesLeft)} bis Mitternacht. Kann man schaffen. Theoretisch.`,
+				"Die Uhr läuft übrigens weiter. Offen:",
 			],
 			seed,
 		)
 	}
 	return pick(
 		[
-			`💀 ${minutesLeft} MINUTEN.`,
-			`💀 NOCH ${minutesLeft} MINUTEN. JETZT.`,
-			`💀 ${minutesLeft}… und dein Mitbewohner kriegt einen Joker.`,
-			"💀 Ich höre nicht auf. Niemals.",
+			`Noch ${minutes(minutesLeft)}.`,
+			`${minutes(minutesLeft)}. Ich höre erst auf, wenn es erledigt ist.`,
+			`${minutes(minutesLeft)} bis zum Joker für die anderen.`,
+			"Ich habe Zeit. Du nicht mehr.",
 		],
 		seed,
 	)
 }
 
 export const HELP_TEXT = [
-	"🧹 <b>Müllbot – Befehle</b>",
+	"<b>Befehle</b>",
 	"",
-	"<b>Alltag</b>",
+	"Die Knöpfe unten decken das Übliche ab. Der Rest:",
+	"",
 	"/heute – was heute ansteht",
 	"/plan – die nächsten zwei Wochen",
 	"/erledigt – Aufgabe abhaken",
+	"/verschieben – einen Termin einmalig verschieben (muss genehmigt werden)",
 	"/uebernehmen – freiwillig eine Aufgabe übernehmen",
 	"/joker – Joker ansehen und einsetzen",
 	"/urlaub 20.12. 03.01. – Urlaub beantragen (ohne Daten: Übersicht)",
@@ -93,14 +95,14 @@ export const HELP_TEXT = [
 	"/neu Name | Rhythmus | gemeinsam | ab Datum – neue Aufgabe",
 	"   z. B. <code>/neu Pflanzen gießen | alle 3 Tage</code>",
 	"   oder <code>/neu Kühlschrank putzen | monatlich | gemeinsam | ab 01.11.</code>",
-	"/rhythmus Nr | Rhythmus – Rhythmus ändern",
-	"/termin Nr | Datum – nächsten Termin verschieben",
-	"/nervig – Nervigkeit einstellen (mit Vorschau)",
+	"/rhythmus Nr | Rhythmus – Rhythmus dauerhaft ändern",
+	"/termin Nr | Datum – Raster dauerhaft auf ein neues Datum legen",
+	"/nervig – Nervigkeit einstellen, mit Vorschau",
 	"/vorschau 0–10 – Vorschau einer Nervigkeitsstufe",
 	"/loeschen – Aufgabe löschen",
 	"",
 	"<b>Regeln</b>",
-	`• Wer eine Aufgabe bis Mitternacht nicht erledigt, hat sie am nächsten Tag wieder – und alle anderen bekommen einen 🃏 Joker. Ab ${formatMinute(settings.eveningStartMinute)} Uhr wird es laut.`,
-	`• Mit einem Joker muss der Schuldige einen deiner Termine übernehmen. Einsetzbar bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag – auch schon Tage vorher.`,
-	"• Urlaub muss von jemand anderem genehmigt werden. Deine Aufgaben übernehmen dann die anderen – ohne Joker.",
+	`• Wer eine Aufgabe bis Mitternacht nicht erledigt, hat sie am nächsten Tag wieder, und alle anderen bekommen einen Joker. Ab ${formatMinute(settings.eveningStartMinute)} Uhr wird erinnert, gegen Mitternacht minütlich.`,
+	`• Mit einem Joker muss der Schuldige einen deiner Termine übernehmen. Einsetzbar bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag, gern auch früher.`,
+	"• Verschieben und Urlaub muss jemand anderes genehmigen. Im Urlaub übernehmen die anderen, ohne Joker.",
 ].join("\n")

@@ -109,8 +109,31 @@ export const formatRelativeDate = (date: LocalDate, today: LocalDate): string =>
 const isValidDate = (year: number, month: number, day: number): boolean =>
 	month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth(year, month)
 
+const WEEKDAY_NAMES: ReadonlyArray<ReadonlyArray<string>> = [
+	["mo", "montag"],
+	["di", "dienstag"],
+	["mi", "mittwoch"],
+	["do", "donnerstag"],
+	["fr", "freitag"],
+	["sa", "samstag"],
+	["so", "sonntag"],
+]
+
+/** Compact `YYYYMMDD` form for callback data. */
+export const toCompact = (date: LocalDate): string => date.replaceAll("-", "")
+
+export const fromCompact = (compact: string): Option.Option<LocalDate> => {
+	const match = /^(\d{4})(\d{2})(\d{2})$/.exec(compact)
+	if (!match) {
+		return Option.none()
+	}
+	const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+	return isValidDate(year, month, day) ? Option.some(fromParts(year, month, day)) : Option.none()
+}
+
 /**
- * Parses `heute`, `morgen`, `übermorgen`, `13.10.`, `13.10.2026`, `13.10.26` and `2026-10-13`.
+ * Parses `heute`, `morgen`, `übermorgen`, weekdays (`Sa`, `Samstag` = the next one after today),
+ * `13.10.`, `13.10.2026`, `13.10.26` and `2026-10-13`.
  * Dates without a year resolve to the next occurrence on or after `today`.
  */
 export const parseDate = (input: string, today: LocalDate): Option.Option<LocalDate> => {
@@ -119,6 +142,10 @@ export const parseDate = (input: string, today: LocalDate): Option.Option<LocalD
 	const offset = keywords[text]
 	if (offset !== undefined) {
 		return Option.some(addDays(today, offset))
+	}
+	const weekday = WEEKDAY_NAMES.findIndex((names) => names.includes(text.replace(/\.$/, "")))
+	if (weekday >= 0) {
+		return Option.some(addDays(today, ((weekday - weekdayIndex(today) + 6) % 7) + 1))
 	}
 
 	const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)

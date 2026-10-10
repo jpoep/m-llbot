@@ -33,7 +33,7 @@ describe("morning digest", () => {
 		const t = task(missed.state)
 		const caughtUp = run(complete(missed.state, A, t.id, t.current.index, day(2))).state
 		const { outbox } = runTicks(caughtUp, at(2, 9), at(3, 8))
-		expect(textsTo(outbox, B).at(-1)).toContain("Du hast Joker")
+		expect(textsTo(outbox, B).at(-1)).toContain("Joker, der sich hier einsetzen lässt")
 	})
 })
 
@@ -84,7 +84,7 @@ describe("evening escalation", () => {
 	test("reminders get more urgent towards midnight", () => {
 		const state = household(spec({ firstDue: day(1), annoyance: 10 }))
 		const late = run(tick(skipDigest(state, 1), at(1, 23, 58)))
-		expect(late.outbox[0]?.text).toContain("💀")
+		expect(late.outbox[0]?.text).toMatch(/2 Minuten|Ich habe Zeit/)
 	})
 })
 

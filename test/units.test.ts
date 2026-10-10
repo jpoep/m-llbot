@@ -31,6 +31,10 @@ describe("calendar", () => {
 		expect(parseDate("2026-11-05", today)).toEqual(Option.some(d("2026-11-05")))
 		expect(parseDate("31.02.", today)).toEqual(Option.none())
 		expect(parseDate("bald", today)).toEqual(Option.none())
+		// 2026-10-12 is a Monday; weekdays mean the next one after today.
+		expect(parseDate("Sa", today)).toEqual(Option.some(d("2026-10-17")))
+		expect(parseDate("montag", today)).toEqual(Option.some(d("2026-10-19")))
+		expect(parseDate("Di.", today)).toEqual(Option.some(d("2026-10-13")))
 	})
 
 	test("resolves local time in Europe/Berlin including DST", () => {
@@ -105,7 +109,7 @@ describe("annoyance", () => {
 		expect(text).toContain(`${reminderMinutes(5).length} Erinnerungen`)
 		expect(text).toContain("18:00")
 		expect(text).toContain("(jede Minute)")
-		expect(formatPreview(0)).toContain("Funkstille")
+		expect(formatPreview(0)).toContain("Abends: nichts")
 	})
 })
 
@@ -114,6 +118,11 @@ describe("callback data", () => {
 		{ _tag: "Done", taskId: "t12", index: 345 },
 		{ _tag: "TakeOver", taskId: "t1", index: 0 },
 		{ _tag: "Joker", taskId: "t1", index: 7 },
+		{ _tag: "RescheduleStart", taskId: "t1", index: 7 },
+		{ _tag: "ReschedulePick", taskId: "t1", index: 7, date: d("2026-12-31") },
+		{ _tag: "RescheduleApprove", requestId: "r4" },
+		{ _tag: "RescheduleReject", requestId: "r4" },
+		{ _tag: "RescheduleCancel", requestId: "r4" },
 		{ _tag: "VacationApprove", vacationId: "v3" },
 		{ _tag: "VacationReject", vacationId: "v3" },
 		{ _tag: "VacationCancel", vacationId: "v3" },
@@ -134,7 +143,17 @@ describe("callback data", () => {
 	)
 
 	test("rejects tampered data", () => {
-		for (const data of ["", "zz:t1:1", "d:t1", "d:t1:x", "d:t1:1:2", "nv:t1:11", "va:../x"]) {
+		for (const data of [
+			"",
+			"zz:t1:1",
+			"d:t1",
+			"d:t1:x",
+			"d:t1:1:2",
+			"nv:t1:11",
+			"va:../x",
+			"rp:t1:1:20261341",
+			"rp:t1:1",
+		]) {
 			expect(decodeCallback(data)).toEqual(Option.none())
 		}
 	})
@@ -143,10 +162,9 @@ describe("callback data", () => {
 describe("command parsing", () => {
 	test("/neu with all options", () => {
 		expect(
-			run(parseNewTask("🌱 Pflanzen gießen | alle 3 Tage | gemeinsam | ab 20.10.", day(0))),
+			run(parseNewTask("Pflanzen gießen | alle 3 Tage | gemeinsam | ab 20.10.", day(0))),
 		).toEqual({
 			name: "Pflanzen gießen",
-			emoji: "🌱",
 			cadence: cadence(3, "day"),
 			kind: "joint",
 			firstDue: d("2026-10-20"),
@@ -157,7 +175,6 @@ describe("command parsing", () => {
 	test("/neu defaults", () => {
 		const spec = run(parseNewTask("Pflanzen gießen | wöchentlich", day(0)))
 		expect(spec.kind).toBe("rotating")
-		expect(spec.emoji).toBe("📌")
 		expect(spec.firstDue).toBe(day(1))
 		expect(fail(parseNewTask("Pflanzen", day(0))).reason).toContain("So geht's")
 	})
