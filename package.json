@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "bun build src/lambda.ts --target node --format esm --minify --sourcemap=linked --external '@aws-sdk/*' --outdir dist --entry-naming index.mjs",
+		"build": "bun build src/lambda.ts --target node --format esm --minify-whitespace --minify-syntax --sourcemap=linked --external '@aws-sdk/*' --outdir dist --entry-naming index.mjs",
 		"typecheck": "tsc --noEmit -p .",
 		"lint": "biome check .",
 		"format": "biome check --write .",
