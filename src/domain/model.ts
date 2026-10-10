@@ -13,7 +13,7 @@ const MinuteOfDay = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 24 
 export const Stats = Schema.Struct({
 	done: Count,
 	missed: Count,
-	jokersPlayed: Count,
+	tokensPlayed: Count,
 	takeovers: Count,
 })
 export type Stats = typeof Stats.Type
@@ -43,7 +43,7 @@ export const Occurrence = Schema.Struct({
 	index: Count,
 	/** Usually the grid date; later if the occurrence was missed or postponed. */
 	dueDate: LocalDate,
-	/** Overrides the rotation for this occurrence (joker, take-over, or the culprit of a miss). */
+	/** Overrides the rotation for this occurrence (token, take-over, or the culprit of a miss). */
 	assignee: Schema.NullOr(ParticipantId),
 	/** How many days in a row this occurrence was missed. */
 	misses: Count,
@@ -70,14 +70,14 @@ export const Task = Schema.Struct({
 export type Task = typeof Task.Type
 
 /** Earned when someone else misses a rotating task. Makes the debtor do one of your turns. */
-export const Joker = Schema.Struct({
+export const Token = Schema.Struct({
 	id: Schema.String,
 	taskId: Schema.String,
 	holder: ParticipantId,
 	debtor: ParticipantId,
 	earnedOn: LocalDate,
 })
-export type Joker = typeof Joker.Type
+export type Token = typeof Token.Type
 
 export const VacationStatus = Schema.Literals(["pending", "approved"])
 export type VacationStatus = typeof VacationStatus.Type
@@ -106,7 +106,7 @@ export type RescheduleRequest = typeof RescheduleRequest.Type
 export const State = Schema.Struct({
 	participants: Schema.Array(Participant),
 	tasks: Schema.Array(Task),
-	jokers: Schema.Array(Joker),
+	tokens: Schema.Array(Token),
 	vacations: Schema.Array(Vacation),
 	reschedules: Schema.Array(RescheduleRequest).pipe(
 		Schema.withDecodingDefaultKey(Effect.succeed([])),
@@ -120,4 +120,29 @@ export const State = Schema.Struct({
 })
 export type State = typeof State.Type
 
-export const emptyStats: Stats = { done: 0, missed: 0, jokersPlayed: 0, takeovers: 0 }
+/**
+ * Renames keys of documents written by older versions before they are decoded:
+ * "jokers" became "tokens" (and "jokersPlayed" became "tokensPlayed").
+ */
+export const upgradeLegacyDocument = (doc: unknown): unknown => {
+	if (typeof doc !== "object" || doc === null) {
+		return doc
+	}
+	const { jokers, ...rest } = doc as Record<string, unknown>
+	const upgraded: Record<string, unknown> =
+		"tokens" in rest ? rest : { ...rest, tokens: jokers ?? [] }
+	const participants = upgraded["participants"]
+	if (Array.isArray(participants)) {
+		upgraded["participants"] = participants.map((p: Record<string, unknown>) => {
+			const stats = p["stats"] as Record<string, unknown> | undefined
+			if (stats === undefined || "tokensPlayed" in stats) {
+				return p
+			}
+			const { jokersPlayed, ...restStats } = stats
+			return { ...p, stats: { ...restStats, tokensPlayed: jokersPlayed ?? 0 } }
+		})
+	}
+	return upgraded
+}
+
+export const emptyStats: Stats = { done: 0, missed: 0, tokensPlayed: 0, takeovers: 0 }

@@ -22,15 +22,15 @@ towards midnight until they are done.
   another day within the next two weeks. Someone else has to approve it. The rhythm stays as is;
   `/termin` is the permanent change.
 - **Missed a day?** The task is due again the next day (regardless of cadence), the annoyance rises
-  by 2 per missed day, and every other participant gets a 🃏 **joker** against the culprit.
-- **Jokers**: when it's your turn on that task, play a joker and the culprit has to do it instead.
+  by 2 per missed day, and every other participant gets a 🃏 **token** against the culprit.
+- **Tokens**: when it's your turn on that task, play a token and the culprit has to do it instead.
   You can play it any time before 12:00 on the due day, including days in advance. The rotation
   then continues as if you had done it.
 - **Take over** (`/uebernehmen`): do someone else's turn voluntarily. No reward.
 - **Vacation** (`/urlaub 20.12. 03.01.`): has to be approved by someone else and can be cancelled.
-  Your turns go to the others (no jokers); joint tasks are postponed until everyone is back.
+  Your turns go to the others (no tokens); joint tasks are postponed until everyone is back.
 
-Global knobs (times, joker cutoff, boost per miss, …) live in [`src/settings.ts`](src/settings.ts).
+Global knobs (times, token cutoff, boost per miss, …) live in [`src/settings.ts`](src/settings.ts).
 
 ## Architecture
 
@@ -54,7 +54,7 @@ EventBridge Scheduler (every minute) ───────▶ λ muellbot-tick �
   state plus an outbox of messages, so it's fully testable without I/O.
   - `annoyance.ts` – escalation curve + preview
   - `schedule.ts` – rotation, vacation substitution, projections
-  - `actions.ts` – complete, take over, jokers, vacation, task admin
+  - `actions.ts` – complete, take over, tokens, vacation, task admin
   - `tick.ts` – midnight rollover (punishment), morning digest, evening reminders
   - `views.ts`, `texts.ts`, `commands.ts`, `callbacks.ts` – German UI
 - `src/services/` – Effect services: `StateStore` (DynamoDB / in-memory), `Telegram`,
@@ -116,9 +116,9 @@ The repository is public, so CI never prints the invite link.
 
 ## Commands (German)
 
-A persistent menu (Heute, Plan, Erledigt, Verschieben, Übernehmen, Joker) covers the everyday
+A persistent menu (Heute, Plan, Erledigt, Verschieben, Übernehmen, Token) covers the everyday
 actions; reminders carry "Erledigt" and "Verschieben" buttons.
 
-`/heute` `/plan` `/erledigt` `/verschieben` `/uebernehmen` `/joker` `/urlaub` `/punkte` `/aufgaben`
+`/heute` `/plan` `/erledigt` `/verschieben` `/uebernehmen` `/token` `/urlaub` `/punkte` `/aufgaben`
 `/neu Name | Rhythmus | gemeinsam | ab Datum` `/rhythmus Nr | Rhythmus` `/termin Nr | Datum`
 `/nervig` `/vorschau 0–10` `/loeschen` `/hilfe`

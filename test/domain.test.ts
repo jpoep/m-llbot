@@ -3,7 +3,7 @@ import {
 	approveVacation,
 	cancelVacation,
 	complete,
-	playJoker,
+	redeemToken,
 	rejectVacation,
 	requestVacation,
 	takeOver,
@@ -104,20 +104,20 @@ describe("round robin", () => {
 })
 
 describe("missing a day", () => {
-	test("reschedules to the next day, keeps the culprit, gives everyone else a joker", () => {
+	test("reschedules to the next day, keeps the culprit, gives everyone else a token", () => {
 		const state = withPeople(household(spec({ firstDue: day(2) })), C)
 		const { state: next, outbox } = rolloverDay(state, day(3))
 		const t = task(next)
 		expect(t.current.dueDate).toBe(day(3))
 		expect(t.current.assignee).toBe(A)
 		expect(t.current.misses).toBe(1)
-		expect(next.jokers.map((j) => [j.holder, j.debtor])).toEqual([
+		expect(next.tokens.map((j) => [j.holder, j.debtor])).toEqual([
 			[B, A],
 			[C, A],
 		])
 		expect(next.participants.find((p) => p.id === A)?.stats.missed).toBe(1)
 		expect(textsTo(outbox, A).join()).toContain("heute wieder fällig")
-		expect(textsTo(outbox, B).join()).toContain("Joker")
+		expect(textsTo(outbox, B).join()).toContain("Token")
 	})
 
 	test("rotation continues normally after the culprit finally does it", () => {
@@ -128,25 +128,25 @@ describe("missing a day", () => {
 		expect(responsibleOn(state, t, day(4))).toEqual([B])
 	})
 
-	test("joint misses are rescheduled without jokers", () => {
+	test("joint misses are rescheduled without tokens", () => {
 		const state = household(spec({ kind: "joint", firstDue: day(2) }))
 		const next = rolloverDay(state, day(3)).state
 		expect(task(next).current.dueDate).toBe(day(3))
-		expect(next.jokers).toHaveLength(0)
+		expect(next.tokens).toHaveLength(0)
 	})
 })
 
-describe("jokers", () => {
-	// A misses day 2 → B gets a joker against A. A does it on day 3. B is up on day 4.
+describe("tokens", () => {
+	// A misses day 2 → B gets a token against A. A does it on day 3. B is up on day 4.
 	const setup = () => doneBy(rolloverDay(household(spec({ firstDue: day(2) })), day(3)).state, A, 3)
 
 	test("can be played before noon on the due day and hands the turn to the debtor", () => {
 		const state = setup()
 		const t = task(state)
-		const result = run(playJoker(state, B, t.id, t.current.index, at(4, 11, 59)))
+		const result = run(redeemToken(state, B, t.id, t.current.index, at(4, 11, 59)))
 		expect(responsibleOn(result.state, task(result.state), day(4))).toEqual([A])
-		expect(result.state.jokers).toHaveLength(0)
-		expect(textsTo(result.outbox, A).join()).toContain("Joker")
+		expect(result.state.tokens).toHaveLength(0)
+		expect(textsTo(result.outbox, A).join()).toContain("Token")
 		// Rotation goes on as if B had done it: day 6 is A's regular turn.
 		const after = doneBy(result.state, A, 4)
 		expect(responsibleOn(after, task(after), day(6))).toEqual([A])
@@ -155,26 +155,30 @@ describe("jokers", () => {
 	test("can be played days before the task is due", () => {
 		const state = setup()
 		const t = task(state)
-		expect(run(playJoker(state, B, t.id, t.current.index, at(3, 20))).state.jokers).toHaveLength(0)
+		expect(run(redeemToken(state, B, t.id, t.current.index, at(3, 20))).state.tokens).toHaveLength(
+			0,
+		)
 	})
 
 	test("cannot be played after the cutoff", () => {
 		const state = setup()
 		const t = task(state)
-		expect(fail(playJoker(state, B, t.id, t.current.index, at(4, 12, 0))).reason).toContain(
+		expect(fail(redeemToken(state, B, t.id, t.current.index, at(4, 12, 0))).reason).toContain(
 			"Zu spät",
 		)
 	})
 
-	test("cannot be played without a joker or for someone else's turn", () => {
+	test("cannot be played without a token or for someone else's turn", () => {
 		const state = setup()
 		const t = task(state)
-		expect(fail(playJoker(state, A, t.id, t.current.index, at(4, 8))).reason).toContain(
+		expect(fail(redeemToken(state, A, t.id, t.current.index, at(4, 8))).reason).toContain(
 			"eigenen Termine",
 		)
 		const fresh = household(spec({ firstDue: day(2) }))
 		const ft = task(fresh)
-		expect(fail(playJoker(fresh, A, ft.id, ft.current.index, at(1, 8))).reason).toContain("keinen")
+		expect(fail(redeemToken(fresh, A, ft.id, ft.current.index, at(1, 8))).reason).toContain(
+			"kein einlösbares",
+		)
 	})
 
 	test("cannot push the task onto someone on vacation", () => {
@@ -184,8 +188,8 @@ describe("jokers", () => {
 			vacations: [{ id: "v9", participant: A, from: day(4), to: day(5), status: "approved" }],
 		}
 		const t = task(state)
-		expect(fail(playJoker(state, B, t.id, t.current.index, at(4, 8))).reason).toContain(
-			"keinen einsetzbaren",
+		expect(fail(redeemToken(state, B, t.id, t.current.index, at(4, 8))).reason).toContain(
+			"kein einlösbares",
 		)
 	})
 })
@@ -196,7 +200,7 @@ describe("taking over", () => {
 		const t = task(state)
 		const result = run(takeOver(state, B, t.id, t.current.index, day(1)))
 		expect(responsibleOn(result.state, task(result.state), day(2))).toEqual([B])
-		expect(result.state.jokers).toHaveLength(0)
+		expect(result.state.tokens).toHaveLength(0)
 		expect(textsTo(result.outbox, A).join()).toContain("übernimmt")
 		const after = doneBy(result.state, B, 2)
 		// Day 4 is B's regular turn – taking over is a gift, not a swap.
@@ -234,10 +238,10 @@ describe("vacation", () => {
 		expect(responsibleOn(requested.state, task(requested.state), day(2))).toEqual([A])
 	})
 
-	test("approved vacation defers the vacationer's tasks to the others, without jokers", () => {
+	test("approved vacation defers the vacationer's tasks to the others, without tokens", () => {
 		const state = requestAndApprove(household(spec({ firstDue: day(2) })), 1, 3)
 		expect(responsibleOn(state, task(state), day(2))).toEqual([B])
-		expect(state.jokers).toHaveLength(0)
+		expect(state.tokens).toHaveLength(0)
 		const projected = projectTask(state, task(state), day(8)).map((o) => [o.date, o.responsible[0]])
 		expect(projected).toEqual([
 			[day(2), B],
@@ -251,7 +255,7 @@ describe("vacation", () => {
 		const state = requestAndApprove(household(spec({ firstDue: day(2) })), 1, 3)
 		const next = rolloverDay(state, day(3)).state
 		expect(task(next).current.assignee).toBe(B)
-		expect(next.jokers.map((j) => [j.holder, j.debtor])).toEqual([[A, B]])
+		expect(next.tokens.map((j) => [j.holder, j.debtor])).toEqual([[A, B]])
 	})
 
 	test("joint tasks are postponed until everybody is back", () => {

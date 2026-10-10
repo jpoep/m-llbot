@@ -117,7 +117,7 @@ describe("callback data", () => {
 	const actions: ReadonlyArray<CallbackAction> = [
 		{ _tag: "Done", taskId: "t12", index: 345 },
 		{ _tag: "TakeOver", taskId: "t1", index: 0 },
-		{ _tag: "Joker", taskId: "t1", index: 7 },
+		{ _tag: "Token", taskId: "t1", index: 7 },
 		{ _tag: "RescheduleStart", taskId: "t1", index: 7 },
 		{ _tag: "ReschedulePick", taskId: "t1", index: 7, date: d("2026-12-31") },
 		{ _tag: "RescheduleApprove", requestId: "r4" },

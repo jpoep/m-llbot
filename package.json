@@ -11,7 +11,8 @@
 		"check": "bun run typecheck && bun run lint && bun run test",
 		"preview": "bun run scripts/preview.ts",
 		"deploy": "bun run check && bun run build && pulumi up --cwd infra && bun run setup-telegram",
-		"setup-telegram": "bun run scripts/setup-telegram.ts"
+		"setup-telegram": "bun run scripts/setup-telegram.ts",
+		"invite": "bun run scripts/invite.ts"
 	},
 	"dependencies": {
 		"@aws-sdk/client-dynamodb": "^3.1149.0",

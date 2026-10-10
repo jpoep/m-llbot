@@ -9,20 +9,20 @@ import {
 	takeOver,
 } from "../src/domain/actions.ts"
 import { cadence } from "../src/domain/cadence.ts"
-import { State } from "../src/domain/model.ts"
+import { State, upgradeLegacyDocument } from "../src/domain/model.ts"
 import type { Outgoing } from "../src/domain/outbox.ts"
 import { responsibleOn } from "../src/domain/schedule.ts"
 import { initialState } from "../src/domain/seed.ts"
 import { HELP_TEXT, reminderHeadline } from "../src/domain/texts.ts"
 import { rolloverDay } from "../src/domain/tick.ts"
 import {
-	jokerView,
 	planView,
 	rescheduleDatePicker,
 	reschedulePicker,
 	statsView,
 	tasksView,
 	todayView,
+	tokenView,
 	vacationsView,
 } from "../src/domain/views.ts"
 import {
@@ -68,7 +68,7 @@ describe("one-off reschedule", () => {
 		const requested = run(requestReschedule(state, A, t.id, t.current.index, day(4), day(1))).state
 		const approved = run(approveReschedule(requested, B, requestId(requested), day(1))).state
 		const next = rolloverDay(approved, day(3)).state
-		expect(next.jokers).toHaveLength(0)
+		expect(next.tokens).toHaveLength(0)
 		expect(task(next).current.dueDate).toBe(day(4))
 	})
 
@@ -144,6 +144,33 @@ describe("one-off reschedule", () => {
 	})
 })
 
+describe("persisted state from before the joker → token rename", () => {
+	test("keeps its tokens and stats", () => {
+		const encoded = JSON.parse(
+			Schema.encodeSync(Schema.fromJsonString(State))(initialState(day(0))),
+		)
+		const legacy = {
+			...encoded,
+			tokens: undefined,
+			jokers: [{ id: "j7", taskId: "t1", holder: 1, debtor: 2, earnedOn: "2026-10-11" }],
+			participants: [
+				{
+					id: 1,
+					name: "A",
+					chatId: 1,
+					stats: { done: 3, missed: 1, jokersPlayed: 2, takeovers: 0 },
+				},
+			],
+		}
+		delete legacy.tokens
+		const decoded = Schema.decodeUnknownSync(State)(upgradeLegacyDocument(legacy))
+		expect(decoded.tokens.map((t) => t.id)).toEqual(["j7"])
+		expect(decoded.participants[0]?.stats.tokensPlayed).toBe(2)
+		// Already-migrated documents pass through untouched.
+		expect(upgradeLegacyDocument(encoded)).toEqual(encoded)
+	})
+})
+
 describe("persisted state from before this change", () => {
 	test("still decodes (old task emojis are dropped, reschedules default to empty)", () => {
 		const encoded = Schema.encodeSync(Schema.fromJsonString(State))(initialState(day(0)))
@@ -175,7 +202,7 @@ describe("tone", () => {
 		const t = task(state)
 		const takeover = run(takeOver(state, B, t.id, t.current.index, day(0)))
 		collected.push(...texts(takeover.outbox))
-		const ticks = runTicks(state, at(1, 0), at(2, 9)) // digest, reminders, misses, jokers
+		const ticks = runTicks(state, at(1, 0), at(2, 9)) // digest, reminders, misses, tokens
 		collected.push(...texts(ticks.outbox))
 		state = ticks.state
 		const requested = run(
@@ -187,7 +214,7 @@ describe("tone", () => {
 			planView(state, day(2)),
 			tasksView(state, day(2)),
 			statsView(state),
-			jokerView(state, B, at(2, 9)),
+			tokenView(state, B, at(2, 9)),
 			vacationsView(state, A, day(2)),
 			reschedulePicker(state, A, day(2)),
 		]) {

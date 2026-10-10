@@ -12,8 +12,8 @@ import {
 	complete,
 	deleteTask,
 	join,
-	playJoker,
 	type Rejected,
+	redeemToken,
 	rejectReschedule,
 	rejectVacation,
 	requestReschedule,
@@ -48,7 +48,6 @@ import {
 	doneConfirm,
 	doneOtherPicker,
 	donePicker,
-	jokerView,
 	planView,
 	rescheduleDatePicker,
 	reschedulePicker,
@@ -56,6 +55,7 @@ import {
 	takeOverPicker,
 	tasksView,
 	todayView,
+	tokenView,
 	type View,
 	vacationsView,
 } from "../domain/views.ts"
@@ -75,7 +75,7 @@ export const COMMANDS: ReadonlyArray<BotCommand> = [
 	{ command: "erledigt", description: "Aufgabe abhaken" },
 	{ command: "verschieben", description: "Einen Termin einmalig verschieben" },
 	{ command: "uebernehmen", description: "Freiwillig eine Aufgabe übernehmen" },
-	{ command: "joker", description: "Joker ansehen und einsetzen" },
+	{ command: "token", description: "Tokens ansehen und einlösen" },
 	{ command: "urlaub", description: "Urlaub beantragen oder ansehen" },
 	{ command: "punkte", description: "Statistik" },
 	{ command: "aufgaben", description: "Alle Aufgaben" },
@@ -223,8 +223,8 @@ const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
 			)
 		case "TakeOver":
 			return runButton(ctx, (s, now) => takeOver(s, actor, action.taskId, action.index, now.date))
-		case "Joker":
-			return runButton(ctx, (s, now) => playJoker(s, actor, action.taskId, action.index, now))
+		case "Token":
+			return runButton(ctx, (s, now) => redeemToken(s, actor, action.taskId, action.index, now))
 		case "RescheduleStart":
 			return showTaskView(ctx, action.taskId, (s, a, now) =>
 				Option.flatMap(findTask(s, action.taskId), (task) =>
@@ -394,10 +394,10 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 			ctx,
 			memberView(ctx, (s, actor, now) => takeOverPicker(s, actor, now.date)),
 		)
-	const jokers = (ctx: Context) =>
+	const tokens = (ctx: Context) =>
 		exec(
 			ctx,
-			memberView(ctx, (s, actor, now) => jokerView(s, actor, now)),
+			memberView(ctx, (s, actor, now) => tokenView(s, actor, now)),
 		)
 
 	// Persistent menu buttons send their label as plain text.
@@ -406,13 +406,14 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 	pm.hears(MENU.done, done)
 	pm.hears(MENU.reschedule, reschedule)
 	pm.hears(MENU.takeOver, takeOverMenu)
-	pm.hears(MENU.jokers, jokers)
+	pm.hears(MENU.tokens, tokens)
+	pm.hears("Joker", tokens) // label of the menu before the rename; stays on phones until resent
 
 	pm.command("heute", today)
 	pm.command("plan", plan)
 	pm.command("erledigt", done)
 	pm.command("uebernehmen", takeOverMenu)
-	pm.command("joker", jokers)
+	pm.command(["token", "tokens", "joker"], tokens)
 	pm.command("aufgaben", (ctx) =>
 		exec(
 			ctx,

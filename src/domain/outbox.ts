@@ -49,13 +49,13 @@ export const MENU = {
 	done: "Erledigt",
 	reschedule: "Verschieben",
 	takeOver: "Übernehmen",
-	jokers: "Joker",
+	tokens: "Tokens",
 } as const
 
 export const MENU_LAYOUT: ReadonlyArray<ReadonlyArray<string>> = [
 	[MENU.today, MENU.plan],
 	[MENU.done, MENU.reschedule],
-	[MENU.takeOver, MENU.jokers],
+	[MENU.takeOver, MENU.tokens],
 ]
 
 export const edit = (

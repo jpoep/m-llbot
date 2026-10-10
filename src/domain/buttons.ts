@@ -15,7 +15,7 @@ export const taskActionRow = (task: Task): ReadonlyArray<Button> => [
 	},
 ]
 
-export const jokerButton = (task: Task): Button => ({
-	text: `Joker spielen: ${taskButtonLabel(task)}`,
-	data: encodeCallback({ _tag: "Joker", taskId: task.id, index: task.current.index }),
+export const tokenButton = (task: Task): Button => ({
+	text: `Token einlösen: ${taskButtonLabel(task)}`,
+	data: encodeCallback({ _tag: "Token", taskId: task.id, index: task.current.index }),
 })

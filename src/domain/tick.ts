@@ -1,14 +1,14 @@
 import { Effect } from "effect"
 import { settings } from "../settings.ts"
 import {
-	canStillPlayJoker,
-	playableJokers,
+	canStillRedeemToken,
+	playableTokens,
 	replaceTask,
 	type Transition,
 	updateStats,
 } from "./actions.ts"
 import { effectiveAnnoyance, reminderMinutes } from "./annoyance.ts"
-import { jokerButton, taskActionRow } from "./buttons.ts"
+import { taskActionRow, tokenButton } from "./buttons.ts"
 import {
 	addDays,
 	formatMinute,
@@ -16,7 +16,7 @@ import {
 	type LocalMoment,
 	minutesUntilMidnight,
 } from "./calendar.ts"
-import type { Joker, Participant, ParticipantId, State, Task } from "./model.ts"
+import type { Participant, ParticipantId, State, Task, Token } from "./model.ts"
 import { type Outgoing, send } from "./outbox.ts"
 import { participantName, projectAll, responsibleOn } from "./schedule.ts"
 import { bold, overdueSuffix, reminderHeadline, taskLabel } from "./texts.ts"
@@ -43,9 +43,9 @@ const punishRotatingMiss = (
 ): Step => {
 	const rivals = state.participants.filter((p) => p.id !== culprit)
 	let next = state
-	const jokers: Array<Joker> = []
+	const tokens: Array<Token> = []
 	for (const rival of rivals) {
-		jokers.push({
+		tokens.push({
 			id: `j${next.nextId}`,
 			taskId: task.id,
 			holder: rival.id,
@@ -54,7 +54,7 @@ const punishRotatingMiss = (
 		})
 		next = { ...next, nextId: next.nextId + 1 }
 	}
-	next = updateStats({ ...next, jokers: [...next.jokers, ...jokers] }, culprit, (s) => ({
+	next = updateStats({ ...next, tokens: [...next.tokens, ...tokens] }, culprit, (s) => ({
 		...s,
 		missed: s.missed + 1,
 	}))
@@ -67,7 +67,7 @@ const punishRotatingMiss = (
 		outbox.push(
 			send(
 				culpritChat,
-				`Mitternacht ist vorbei, ${taskLabel(task)} ist es nicht.\n\nDie Aufgabe ist heute wieder fällig, die Nervigkeit steigt, und ${rivalNames} ${gets} einen Joker gegen dich.`,
+				`Mitternacht ist vorbei, ${taskLabel(task)} ist es nicht.\n\nDie Aufgabe ist heute wieder fällig, die Nervigkeit steigt, und ${rivalNames} ${gets} ein Token gegen dich.`,
 			),
 		)
 	}
@@ -75,7 +75,7 @@ const punishRotatingMiss = (
 		outbox.push(
 			send(
 				rival.chatId,
-				`${culpritName} hat ${taskLabel(task)} nicht erledigt. Du bekommst dafür einen Joker.\nWenn du das nächste Mal dran bist, kannst du ihn einsetzen (/joker). Dann ist ${culpritName} dran.`,
+				`${culpritName} hat ${taskLabel(task)} nicht erledigt. Du bekommst dafür ein Token.\nWenn du das nächste Mal dran bist, kannst du es einlösen (/token). Dann ist ${culpritName} dran.`,
 			),
 		)
 	}
@@ -201,24 +201,24 @@ const digestFor = (
 		lines.push("", "<b>Morgen:</b>", ...dueTomorrow.map((o) => `• ${taskLabel(o.task)}`))
 	}
 
-	const jokerTasks = [
+	const tokenTasks = [
 		...dueToday,
 		...dueTomorrow.filter((o) => o.isCurrent).map((o) => o.task),
 	].filter(
 		(task) =>
 			task.kind === "rotating" &&
-			canStillPlayJoker(task.current.dueDate, now) &&
-			playableJokers(state, participant.id, task, task.current.dueDate).length > 0,
+			canStillRedeemToken(task.current.dueDate, now) &&
+			playableTokens(state, participant.id, task, task.current.dueDate).length > 0,
 	)
-	if (jokerTasks.length > 0) {
+	if (tokenTasks.length > 0) {
 		lines.push(
 			"",
-			`Du hast einen Joker, der sich hier einsetzen lässt. Bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`,
+			`Du hast ein Token, das sich hier einlösen lässt. Bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`,
 		)
 	}
 	return send(participant.chatId, lines.join("\n"), [
 		...dueToday.map(taskActionRow),
-		...jokerTasks.map((t) => [jokerButton(t)]),
+		...tokenTasks.map((t) => [tokenButton(t)]),
 	])
 }
 

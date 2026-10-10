@@ -5,7 +5,7 @@ import {
 	PutItemCommand,
 } from "@aws-sdk/client-dynamodb"
 import { Config, Context, Data, Effect, Layer, Ref, Schema } from "effect"
-import { State } from "../domain/model.ts"
+import { State, upgradeLegacyDocument } from "../domain/model.ts"
 
 /** Another invocation saved a newer version in the meantime. Safe to retry. */
 export class Conflict extends Data.TaggedError("Conflict") {}
@@ -35,7 +35,10 @@ export class StateStore extends Context.Service<
 >()("StateStore") {}
 
 const StateJson = Schema.fromJsonString(State)
-const decodeState = Schema.decodeUnknownEffect(StateJson)
+const decodeState = (json: string) =>
+	Effect.try({ try: () => upgradeLegacyDocument(JSON.parse(json)), catch: (cause) => cause }).pipe(
+		Effect.flatMap(Schema.decodeUnknownEffect(State)),
+	)
 const encodeState = Schema.encodeEffect(StateJson)
 
 const ITEM_KEY = { pk: { S: "household" } } as const

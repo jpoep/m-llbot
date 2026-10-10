@@ -50,7 +50,7 @@ export const defaultTasks = (today: LocalDate): ReadonlyArray<NewTask> => [
 export const emptyState: State = {
 	participants: [],
 	tasks: [],
-	jokers: [],
+	tokens: [],
 	vacations: [],
 	reschedules: [],
 	lastRollover: null,

@@ -8,8 +8,8 @@ export const settings = {
 	morningDigestMinute: 8 * 60,
 	/** When the escalating evening reminders start. */
 	eveningStartMinute: 18 * 60,
-	/** Jokers for a day's task can only be played before this time on that day. */
-	jokerCutoffMinute: 12 * 60,
+	/** Tokens for a day's task can only be played before this time on that day. */
+	tokenCutoffMinute: 12 * 60,
 	/** Every missed day raises the annoyance level of that occurrence by this much (capped at 10). */
 	annoyanceBoostPerMiss: 2,
 	/** Default annoyance for tasks created via the bot. */

@@ -11,7 +11,7 @@ export type CallbackAction =
 	| { readonly _tag: "DoneAsk"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "DoneConfirm"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "TakeOver"; readonly taskId: string; readonly index: number }
-	| { readonly _tag: "Joker"; readonly taskId: string; readonly index: number }
+	| { readonly _tag: "Token"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "RescheduleStart"; readonly taskId: string; readonly index: number }
 	| {
 			readonly _tag: "ReschedulePick"
@@ -40,7 +40,7 @@ const PREFIX: Record<Tag, string> = {
 	DoneAsk: "da",
 	DoneConfirm: "dc",
 	TakeOver: "t",
-	Joker: "j",
+	Token: "j",
 	RescheduleStart: "rs",
 	ReschedulePick: "rp",
 	RescheduleApprove: "ra",
@@ -66,7 +66,7 @@ export const encodeCallback = (action: CallbackAction): string => {
 		case "DoneAsk":
 		case "DoneConfirm":
 		case "TakeOver":
-		case "Joker":
+		case "Token":
 		case "RescheduleStart":
 			return `${prefix}:${action.taskId}:${action.index}`
 		case "ReschedulePick":
@@ -119,7 +119,7 @@ export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
 		case "DoneAsk":
 		case "DoneConfirm":
 		case "TakeOver":
-		case "Joker":
+		case "Token":
 		case "RescheduleStart":
 			return Option.all({ taskId: parseId(first), index: parseIndex(second) }).pipe(
 				Option.map(({ taskId, index }) => ({ _tag: tag, taskId, index })),

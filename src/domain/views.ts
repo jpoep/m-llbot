@@ -1,17 +1,17 @@
 import { settings } from "../settings.ts"
 import {
 	canReschedule,
-	canStillPlayJoker,
+	canStillRedeemToken,
 	effectiveDueDate,
 	isMine,
 	nextAfterCompletion,
-	playableJokers,
+	playableTokens,
 	rescheduleOptions,
 	taskButtons,
 	vacationRange,
 } from "./actions.ts"
 import { formatPreview, MAX_ANNOYANCE } from "./annoyance.ts"
-import { jokerButton, taskActionRow } from "./buttons.ts"
+import { taskActionRow, tokenButton } from "./buttons.ts"
 import { formatCadence } from "./cadence.ts"
 import {
 	addDays,
@@ -111,9 +111,9 @@ export const statsView = (state: State): View => {
 	const lines = state.participants
 		.toSorted((a, b) => b.stats.done - a.stats.done)
 		.map((p) => {
-			const jokers = state.jokers.filter((j) => j.holder === p.id).length
+			const tokens = state.tokens.filter((j) => j.holder === p.id).length
 			const s = p.stats
-			return `${bold(p.name)}\n   ${s.done} erledigt, ${s.missed} verpasst, ${s.takeovers} übernommen, ${s.jokersPlayed} Joker gespielt, ${jokers} auf der Hand`
+			return `${bold(p.name)}\n   ${s.done} erledigt, ${s.missed} verpasst, ${s.takeovers} übernommen, ${s.tokensPlayed} Tokens eingelöst, ${tokens} übrig`
 		})
 	return view(`<b>Statistik</b>\n\n${lines.join("\n\n")}`)
 }
@@ -276,10 +276,10 @@ export const takeOverPicker = (state: State, actor: ParticipantId, today: LocalD
 	)
 }
 
-export const jokerView = (state: State, actor: ParticipantId, now: LocalMoment): View => {
-	const mine = state.jokers.filter((j) => j.holder === actor)
+export const tokenView = (state: State, actor: ParticipantId, now: LocalMoment): View => {
+	const mine = state.tokens.filter((j) => j.holder === actor)
 	if (mine.length === 0) {
-		return view("Du hast keine Joker. Die gibt es, wenn jemand anderes etwas verpasst.")
+		return view("Du hast keine Tokens. Die gibt es, wenn jemand anderes etwas verpasst.")
 	}
 	const lines = mine.map((j) => {
 		const task = state.tasks.find((t) => t.id === j.taskId)
@@ -291,17 +291,17 @@ export const jokerView = (state: State, actor: ParticipantId, now: LocalMoment):
 		return (
 			t.kind === "rotating" &&
 			responsibleOn(state, t, due).includes(actor) &&
-			canStillPlayJoker(due, now) &&
-			playableJokers(state, actor, t, due).length > 0
+			canStillRedeemToken(due, now) &&
+			playableTokens(state, actor, t, due).length > 0
 		)
 	})
 	const hint =
 		playable.length > 0
-			? "\n\nEinsetzbar:"
-			: `\n\nGerade nicht einsetzbar. Das geht nur für deinen nächsten Termin der Aufgabe, bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`
+			? "\n\nEinlösbar:"
+			: `\n\nGerade nicht einlösbar. Das geht nur für deinen nächsten Termin der Aufgabe, bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`
 	return view(
-		`<b>Deine Joker</b>\n\n${lines.join("\n")}${hint}`,
-		playable.map((t) => [jokerButton(t)]),
+		`<b>Deine Tokens</b>\n\n${lines.join("\n")}${hint}`,
+		playable.map((t) => [tokenButton(t)]),
 	)
 }
 
@@ -392,7 +392,7 @@ export const deletePicker = (state: State): View =>
 
 export const deleteConfirm = (task: Task): View =>
 	view(
-		`${taskLabel(task)} (${formatCadence(task.cadence)}) wirklich löschen? Zugehörige Joker verfallen.`,
+		`${taskLabel(task)} (${formatCadence(task.cadence)}) wirklich löschen? Zugehörige Tokens verfallen.`,
 		[
 			[
 				{ text: "Löschen", data: encodeCallback({ _tag: "DeleteConfirm", taskId: task.id }) },

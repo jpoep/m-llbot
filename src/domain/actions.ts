@@ -16,7 +16,6 @@ import {
 import { encodeCallback } from "./callbacks.ts"
 import {
 	emptyStats,
-	type Joker,
 	type Occurrence,
 	type Participant,
 	type ParticipantId,
@@ -25,6 +24,7 @@ import {
 	type Stats,
 	type Task,
 	type TaskKind,
+	type Token,
 	type Vacation,
 } from "./model.ts"
 import { column, type Outgoing, send, sendWithMenu } from "./outbox.ts"
@@ -179,7 +179,7 @@ export const join = (state: State, member: NewMember): Effect.Effect<Transition>
 }
 
 // ---------------------------------------------------------------------------
-// Completing, taking over, jokers
+// Completing, taking over, tokens
 // ---------------------------------------------------------------------------
 
 /** The next occurrence after completing the current one on `today`. */
@@ -308,14 +308,14 @@ export const takeOver = (
 		}
 	})
 
-/** Jokers of `holder` for `task` whose debtor could actually take over on `date`. */
-export const playableJokers = (
+/** Tokens of `holder` for `task` whose debtor could actually take over on `date`. */
+export const playableTokens = (
 	state: State,
 	holder: ParticipantId,
 	task: Task,
 	date: LocalDate,
-): ReadonlyArray<Joker> =>
-	state.jokers.filter(
+): ReadonlyArray<Token> =>
+	state.tokens.filter(
 		(j) =>
 			j.holder === holder &&
 			j.taskId === task.id &&
@@ -323,15 +323,15 @@ export const playableJokers = (
 			isAvailable(state, j.debtor, date),
 	)
 
-export const jokerDeadline = (due: LocalDate): LocalMoment => ({
+export const tokenDeadline = (due: LocalDate): LocalMoment => ({
 	date: due,
-	minute: settings.jokerCutoffMinute,
+	minute: settings.tokenCutoffMinute,
 })
 
-export const canStillPlayJoker = (due: LocalDate, now: LocalMoment): boolean =>
-	compareMoments(now, jokerDeadline(due)) < 0
+export const canStillRedeemToken = (due: LocalDate, now: LocalMoment): boolean =>
+	compareMoments(now, tokenDeadline(due)) < 0
 
-export const playJoker = (
+export const redeemToken = (
 	state: State,
 	actor: ParticipantId,
 	taskId: string,
@@ -342,41 +342,41 @@ export const playJoker = (
 		const me = yield* requireParticipant(state, actor)
 		const task = yield* requireCurrent(state, taskId, index)
 		if (task.kind === "joint") {
-			return yield* reject("Bei gemeinsamen Aufgaben gibt es keine Joker.")
+			return yield* reject("Bei gemeinsamen Aufgaben gibt es keine Tokens.")
 		}
 		const due = effectiveDueDate(state, task)
 		if (!responsibleOn(state, task, due).includes(actor)) {
-			return yield* reject("Joker gelten nur für deine eigenen Termine.")
+			return yield* reject("Tokens gelten nur für deine eigenen Termine.")
 		}
-		if (!canStillPlayJoker(due, now)) {
+		if (!canStillRedeemToken(due, now)) {
 			return yield* reject(
-				`Zu spät. Joker gehen nur bis ${formatMinute(settings.jokerCutoffMinute)} Uhr am Fälligkeitstag.`,
+				`Zu spät. Tokens gehen nur bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`,
 			)
 		}
-		const joker = playableJokers(state, actor, task, due)[0]
-		if (joker === undefined) {
-			return yield* reject("Du hast keinen einsetzbaren Joker für diese Aufgabe.")
+		const token = playableTokens(state, actor, task, due)[0]
+		if (token === undefined) {
+			return yield* reject("Du hast kein einlösbares Token für diese Aufgabe.")
 		}
-		const updated: Task = { ...task, current: { ...task.current, assignee: joker.debtor } }
+		const updated: Task = { ...task, current: { ...task.current, assignee: token.debtor } }
 		const next = updateStats(
-			{ ...replaceTask(state, updated), jokers: state.jokers.filter((j) => j.id !== joker.id) },
+			{ ...replaceTask(state, updated), tokens: state.tokens.filter((j) => j.id !== token.id) },
 			actor,
-			(s) => ({ ...s, jokersPlayed: s.jokersPlayed + 1 }),
+			(s) => ({ ...s, tokensPlayed: s.tokensPlayed + 1 }),
 		)
 		const when = formatRelativeDate(due, now.date)
-		const debtorName = participantName(state, joker.debtor)
+		const debtorName = participantName(state, token.debtor)
 		return {
 			state: next,
-			toast: "Joker gespielt.",
+			toast: "Token eingelöst.",
 			outbox: [
 				send(
 					me.chatId,
-					`Joker gespielt. ${bold(debtorName)} übernimmt ${taskLabel(task)} (${when}).`,
+					`Token eingelöst. ${bold(debtorName)} übernimmt ${taskLabel(task)} (${when}).`,
 				),
-				...chatOf(next, joker.debtor).map((chatId) =>
+				...chatOf(next, token.debtor).map((chatId) =>
 					send(
 						chatId,
-						`${bold(me.name)} hat einen Joker gespielt. Du übernimmst ${taskLabel(task)} (${when}).\nDas ist die Rechnung für den ${formatDate(joker.earnedOn)}.`,
+						`${bold(me.name)} hat ein Token eingelöst. Du übernimmst ${taskLabel(task)} (${when}).\nDas ist die Rechnung für den ${formatDate(token.earnedOn)}.`,
 					),
 				),
 			],
@@ -643,7 +643,7 @@ export const requestVacation = (
 				...others(next, actor).map((p) =>
 					send(
 						p.chatId,
-						`${bold(me.name)} möchte Urlaub: ${range}. In der Zeit fallen die Aufgaben an dich, ohne Joker.`,
+						`${bold(me.name)} möchte Urlaub: ${range}. In der Zeit fallen die Aufgaben an dich, ohne Tokens.`,
 						[
 							[
 								{
@@ -837,7 +837,7 @@ export const deleteTask = (
 		const next: State = {
 			...state,
 			tasks: state.tasks.filter((t) => t.id !== taskId),
-			jokers: state.jokers.filter((j) => j.taskId !== taskId),
+			tokens: state.tokens.filter((j) => j.taskId !== taskId),
 			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
 		}
 		return {

@@ -1,6 +1,6 @@
 config:
   muellbot:joinCode:
-    secure: AAABAAGp1N74F9MPY/tAE6/kDHzlMOihRyjK/j4gnTqnxJeClMvXW9EjnIxLNNL0LeKwPDm5+ck=
+    secure: AAABAPbLfRMTwUCFAJsJlD/05m6PjOknDoawVYz80/nnR50jZZHEzTbpeMEQyWqK1lOXmfOZrpg=
   muellbot:githubRepository: jpoep/m-llbot
   muellbot:githubEnvironment: production
   muellbot:telegramBotToken:

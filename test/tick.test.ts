@@ -26,14 +26,14 @@ describe("morning digest", () => {
 		expect(textsTo(outbox, B)).toHaveLength(0)
 	})
 
-	test("flags overdue tasks and mentions playable jokers", () => {
-		// Every 2 days: A misses day 1 → B gets a joker. A catches up on day 2, B is up on day 3.
+	test("flags overdue tasks and mentions playable tokens", () => {
+		// Every 2 days: A misses day 1 → B gets a token. A catches up on day 2, B is up on day 3.
 		const missed = runTicks(household(spec({ firstDue: day(1) })), at(1, 0), at(2, 8))
 		expect(textsTo(missed.outbox, A).at(-1)).toContain("überfällig")
 		const t = task(missed.state)
 		const caughtUp = run(complete(missed.state, A, t.id, t.current.index, day(2))).state
 		const { outbox } = runTicks(caughtUp, at(2, 9), at(3, 8))
-		expect(textsTo(outbox, B).at(-1)).toContain("Joker, der sich hier einsetzen lässt")
+		expect(textsTo(outbox, B).at(-1)).toContain("Token, das sich hier einlösen lässt")
 	})
 })
 
