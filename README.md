@@ -93,13 +93,14 @@ Anyone who knows it can join the household.
 `pulumi up` and refresh the Telegram webhook/commands.
 
 - **AWS:** OIDC, no stored keys. The role `muellbot-github-deploy` only trusts
-  `repo:jpoep/m-llbot:environment:production` (audience `sts.amazonaws.com`). The `production`
+  `repo:jpoep@11962438/m-llbot@1413559700:environment:production` (audience `sts.amazonaws.com`).
+  The repo uses GitHub's immutable subject format with owner/repo IDs (config `githubSubjectPrefix`). The `production`
   environment only accepts the `main` branch. The role can manage the bot's `muellbot-*`
   resources but can only *read* its own role and policy, so changes to it have to be deployed
   locally with admin credentials.
 - **Pulumi Cloud:** also OIDC. `pulumi/auth-actions` exchanges the GitHub token for a short-lived
   personal access token of `dyken`. Pulumi Cloud only issues it for
-  `aud=urn:pulumi:org:dyken` + `sub=repo:jpoep/m-llbot:environment:production`.
+  `aud=urn:pulumi:org:dyken` + `sub=repo:jpoep@11962438/m-llbot@1413559700:environment:production`.
 
 One-time bootstrap:
 
@@ -107,7 +108,8 @@ One-time bootstrap:
    provider yet: `pulumi config set createGithubOidcProvider true --cwd infra`.
 2. Pulumi Cloud → Settings → OIDC Issuers: register `https://token.actions.githubusercontent.com`
    with a policy that allows a *personal* token for `dyken` when `aud` is `urn:pulumi:org:dyken` and
-   `sub` is `repo:jpoep/m-llbot:environment:production`.
+   `sub` is `repo:jpoep@11962438/m-llbot@1413559700:environment:production`
+   (`gh api repos/jpoep/m-llbot/actions/oidc/customization/sub` shows the prefix).
 3. `gh variable set DEPLOY_ENABLED --body true`
 
 The repository is public, so CI never prints the invite link.

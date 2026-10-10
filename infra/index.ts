@@ -181,6 +181,10 @@ export const deployedTo = pulumi.interpolate`${accountId} / ${region}`
 // ---------------------------------------------------------------------------
 const githubRepository = config.get("githubRepository")
 const githubEnvironment = config.get("githubEnvironment") ?? "production"
+// GitHub's immutable subject format embeds owner and repo IDs (`repo:owner@id/name@id`), which
+// survives renames and can't be claimed by someone re-creating a deleted repo. Falls back to the
+// classic `repo:owner/name` format.
+const githubSubjectPrefix = config.get("githubSubjectPrefix") ?? `repo:${githubRepository}`
 
 const arn = (service: string, resource: string) =>
 	pulumi.interpolate`arn:aws:${service}:${region}:${accountId}:${resource}`
@@ -212,7 +216,7 @@ export const githubDeployRoleArn = githubRepository
 							Condition: {
 								StringEquals: {
 									"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-									"token.actions.githubusercontent.com:sub": `repo:${githubRepository}:environment:${githubEnvironment}`,
+									"token.actions.githubusercontent.com:sub": `${githubSubjectPrefix}:environment:${githubEnvironment}`,
 								},
 							},
 						},

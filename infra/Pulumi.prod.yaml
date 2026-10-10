@@ -5,3 +5,4 @@ config:
   muellbot:githubEnvironment: production
   muellbot:telegramBotToken:
     secure: AAABAGHR/cs42MMZQcoahsnCXwdq+S9tEKNsCfp3fWhBphWbAtLoXwN1dWCyi7Bj8pPekIS0oXrPo989G0oCJ/9x38Rkq1ZLl7hXVQjU
+  muellbot:githubSubjectPrefix: repo:jpoep@11962438/m-llbot@1413559700
