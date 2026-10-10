@@ -1,0 +1,5 @@
+config:
+  muellbot:joinCode:
+    secure: AAABAAGp1N74F9MPY/tAE6/kDHzlMOihRyjK/j4gnTqnxJeClMvXW9EjnIxLNNL0LeKwPDm5+ck=
+  muellbot:githubRepository: jpoep/m-llbot
+  muellbot:githubEnvironment: production

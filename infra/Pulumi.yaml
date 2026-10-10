@@ -1,0 +1,22 @@
+name: muellbot
+description: Telegram chore reminder bot – Lambda + DynamoDB + EventBridge Scheduler
+# Arch's pulumi package doesn't ship the bun language host, so the program runs on Node's native
+# TypeScript support (type stripping) with bun as package manager.
+runtime:
+  name: nodejs
+  options:
+    packagemanager: bun
+    typescript: false
+main: index.ts
+config:
+  aws:region:
+    value: eu-central-1
+  # Guard rail: refuse to touch any account other than the workload account.
+  aws:allowedAccountIds:
+    value:
+      - "342560106494"
+  aws:defaultTags:
+    value:
+      tags:
+        project: muellbot
+        managed-by: pulumi

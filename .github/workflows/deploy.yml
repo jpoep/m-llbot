@@ -1,0 +1,62 @@
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
+  deploy:
+    name: Deploy (pulumi up)
+    needs: check
+    # Set the repository variable DEPLOY_ENABLED=true once the bootstrap (see README) is done.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # The AWS role only trusts this environment, which only accepts the main branch.
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.2
+      # The Pulumi program runs on Node's native TypeScript support (see infra/Pulumi.yaml).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::342560106494:role/muellbot-github-deploy
+          role-session-name: muellbot-${{ github.run_id }}
+          aws-region: eu-central-1
+          allowed-account-ids: "342560106494"
+      - uses: pulumi/actions@v7
+        with:
+          command: up
+          stack-name: dyken/muellbot/prod
+          work-dir: infra
+      - run: bun run setup-telegram

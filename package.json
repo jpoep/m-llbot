@@ -1,0 +1,29 @@
+{
+	"name": "muellbot",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "bun build src/lambda.ts --target node --format esm --minify --sourcemap=linked --external '@aws-sdk/*' --outdir dist --entry-naming index.mjs",
+		"typecheck": "tsc --noEmit -p .",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"test": "bun test",
+		"check": "bun run typecheck && bun run lint && bun run test",
+		"preview": "bun run scripts/preview.ts",
+		"deploy": "bun run check && bun run build && pulumi up --cwd infra && bun run setup-telegram",
+		"setup-telegram": "bun run scripts/setup-telegram.ts"
+	},
+	"dependencies": {
+		"@aws-sdk/client-dynamodb": "^3.1149.0",
+		"@pulumi/aws": "^7.50.0",
+		"@pulumi/pulumi": "^3.268.0",
+		"effect": "^4.0.2",
+		"grammy": "^1.46.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.15",
+		"@types/aws-lambda": "^8.10.164",
+		"@types/bun": "^1.4.2",
+		"typescript": "^7.0.2"
+	}
+}
