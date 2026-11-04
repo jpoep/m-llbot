@@ -12,6 +12,10 @@ export type CallbackAction =
 	| { readonly _tag: "DoneConfirm"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "TakeOver"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "Token"; readonly taskId: string; readonly index: number }
+	| { readonly _tag: "TokenGiftStart" }
+	| { readonly _tag: "TokenGiftRecipient"; readonly recipient: number }
+	| { readonly _tag: "TokenGiftTask"; readonly recipient: number; readonly taskId: string }
+	| { readonly _tag: "TokenGiftConfirm"; readonly recipient: number; readonly taskId: string }
 	| { readonly _tag: "RescheduleStart"; readonly taskId: string; readonly index: number }
 	| {
 			readonly _tag: "ReschedulePick"
@@ -41,6 +45,10 @@ const PREFIX: Record<Tag, string> = {
 	DoneConfirm: "dc",
 	TakeOver: "t",
 	Token: "j",
+	TokenGiftStart: "gs",
+	TokenGiftRecipient: "gr",
+	TokenGiftTask: "gt",
+	TokenGiftConfirm: "gc",
 	RescheduleStart: "rs",
 	ReschedulePick: "rp",
 	RescheduleApprove: "ra",
@@ -75,6 +83,11 @@ export const encodeCallback = (action: CallbackAction): string => {
 		case "RescheduleReject":
 		case "RescheduleCancel":
 			return `${prefix}:${action.requestId}`
+		case "TokenGiftRecipient":
+			return `${prefix}:${action.recipient}`
+		case "TokenGiftTask":
+		case "TokenGiftConfirm":
+			return `${prefix}:${action.recipient}:${action.taskId}`
 		case "VacationApprove":
 		case "VacationReject":
 		case "VacationCancel":
@@ -88,6 +101,7 @@ export const encodeCallback = (action: CallbackAction): string => {
 			return `${prefix}:${action.taskId}:${action.level}`
 		case "Dismiss":
 		case "DoneOther":
+		case "TokenGiftStart":
 			return prefix
 	}
 }
@@ -95,6 +109,9 @@ export const encodeCallback = (action: CallbackAction): string => {
 const ID = /^[a-z]\d+$/
 const parseIndex = (value: string | undefined): Option.Option<number> =>
 	value !== undefined && /^\d+$/.test(value) ? Option.some(Number(value)) : Option.none()
+/** Telegram user ids are plain positive integers. */
+const parseParticipant = (value: string | undefined): Option.Option<number> =>
+	value !== undefined && /^\d{1,15}$/.test(value) ? Option.some(Number(value)) : Option.none()
 const parseId = (value: string | undefined): Option.Option<string> =>
 	value !== undefined && ID.test(value) ? Option.some(value) : Option.none()
 
@@ -148,8 +165,18 @@ export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
 				Option.filter(({ level }) => level <= 10),
 				Option.map(({ taskId, level }) => ({ _tag: tag, taskId, level })),
 			)
+		case "TokenGiftRecipient":
+			return second === undefined
+				? Option.map(parseParticipant(first), (recipient) => ({ _tag: tag, recipient }))
+				: Option.none()
+		case "TokenGiftTask":
+		case "TokenGiftConfirm":
+			return Option.all({ recipient: parseParticipant(first), taskId: parseId(second) }).pipe(
+				Option.map(({ recipient, taskId }) => ({ _tag: tag, recipient, taskId })),
+			)
 		case "Dismiss":
 		case "DoneOther":
+		case "TokenGiftStart":
 			return first === undefined ? Option.some({ _tag: tag }) : Option.none()
 	}
 }

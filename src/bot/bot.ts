@@ -11,6 +11,7 @@ import {
 	canReschedule,
 	complete,
 	deleteTask,
+	giftToken,
 	join,
 	type Rejected,
 	redeemToken,
@@ -48,6 +49,9 @@ import {
 	doneConfirm,
 	doneOtherPicker,
 	donePicker,
+	giftConfirm,
+	giftRecipientPicker,
+	giftTaskPicker,
 	planView,
 	rescheduleDatePicker,
 	reschedulePicker,
@@ -76,6 +80,7 @@ export const COMMANDS: ReadonlyArray<BotCommand> = [
 	{ command: "verschieben", description: "Einen Termin einmalig verschieben" },
 	{ command: "uebernehmen", description: "Freiwillig eine Aufgabe übernehmen" },
 	{ command: "token", description: "Tokens ansehen und einlösen" },
+	{ command: "schenken", description: "Jemandem ein Token schenken, auf deine Kosten" },
 	{ command: "urlaub", description: "Urlaub beantragen oder ansehen" },
 	{ command: "punkte", description: "Statistik" },
 	{ command: "aufgaben", description: "Alle Aufgaben" },
@@ -220,6 +225,23 @@ const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
 						? Option.some(doneConfirm(s, task, a, now.date))
 						: Option.none(),
 				),
+			)
+		case "TokenGiftStart":
+			return showView(ctx, (s, a) => giftRecipientPicker(s, a))
+		case "TokenGiftRecipient":
+			return showView(ctx, (s) => giftTaskPicker(s, ParticipantId.make(action.recipient)))
+		case "TokenGiftTask":
+			return showTaskView(ctx, action.taskId, (s) =>
+				Option.map(findTask(s, action.taskId), (task) =>
+					giftConfirm(s, ParticipantId.make(action.recipient), task),
+				),
+			)
+		case "TokenGiftConfirm":
+			return runButton(
+				ctx,
+				(s, now) =>
+					giftToken(s, actor, ParticipantId.make(action.recipient), action.taskId, now.date),
+				removeKeyboard(ctx),
 			)
 		case "TakeOver":
 			return runButton(ctx, (s, now) => takeOver(s, actor, action.taskId, action.index, now.date))
@@ -414,6 +436,12 @@ export const createBot = ({ token, joinCode, runtime }: BotOptions): Bot => {
 	pm.command("erledigt", done)
 	pm.command("uebernehmen", takeOverMenu)
 	pm.command(["token", "tokens", "joker"], tokens)
+	pm.command("schenken", (ctx) =>
+		exec(
+			ctx,
+			memberView(ctx, (s, actor) => giftRecipientPicker(s, actor)),
+		),
+	)
 	pm.command("aufgaben", (ctx) =>
 		exec(
 			ctx,

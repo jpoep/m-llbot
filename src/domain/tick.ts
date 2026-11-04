@@ -51,6 +51,7 @@ const punishRotatingMiss = (
 			holder: rival.id,
 			debtor: culprit,
 			earnedOn: addDays(day, -1),
+			source: "missed",
 		})
 		next = { ...next, nextId: next.nextId + 1 }
 	}

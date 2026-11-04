@@ -87,6 +87,7 @@ export const HELP_TEXT = [
 	"/verschieben – einen Termin einmalig verschieben (muss genehmigt werden)",
 	"/uebernehmen – freiwillig eine Aufgabe übernehmen",
 	"/token – Tokens ansehen und einlösen",
+	"/schenken – jemandem ein Token schenken, auf deine Kosten",
 	"/urlaub 20.12. 03.01. – Urlaub beantragen (ohne Daten: Übersicht)",
 	"/punkte – Statistik",
 	"",
@@ -103,7 +104,7 @@ export const HELP_TEXT = [
 	"",
 	"<b>Regeln</b>",
 	`• Wer eine Aufgabe bis Mitternacht nicht erledigt, hat sie am nächsten Tag wieder, und alle anderen bekommen ein Token. Ab ${formatMinute(settings.eveningStartMinute)} Uhr wird erinnert, gegen Mitternacht minütlich.`,
-	`• Mit einem Token muss der Schuldige einen deiner Termine übernehmen. Einlösbar bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag, gern auch früher.`,
+	`• Mit einem Token muss der Schuldige (oder wer es verschenkt hat) einen deiner Termine übernehmen. Einlösbar bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag, gern auch früher.`,
 	"• Wer früher erledigt, setzt den Rhythmus neu: das nächste Mal zählt ab dem Tag, an dem es erledigt wurde. Fremde Aufgaben abhaken geht auch, dann ist der andere diesmal raus.",
 	"• Verschieben und Urlaub muss jemand anderes genehmigen. Im Urlaub übernehmen die anderen, ohne Tokens.",
 ].join("\n")

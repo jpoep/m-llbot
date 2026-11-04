@@ -26,6 +26,8 @@ towards midnight until they are done.
 - **Tokens**: when it's your turn on that task, play a token and the culprit has to do it instead.
   You can play it any time before 12:00 on the due day, including days in advance. The rotation
   then continues as if you had done it.
+- **Gift a token** (`/schenken` or the button under `/token`): give someone a token against
+  yourself for a task, e.g. as thanks. When they redeem it, you do their turn.
 - **Take over** (`/uebernehmen`): do someone else's turn voluntarily. No reward.
 - **Vacation** (`/urlaub 20.12. 03.01.`): has to be approved by someone else and can be cancelled.
   Your turns go to the others (no tokens); joint tasks are postponed until everyone is back.
@@ -119,6 +121,6 @@ The repository is public, so CI never prints the invite link.
 A persistent menu (Heute, Plan, Erledigt, Verschieben, Übernehmen, Token) covers the everyday
 actions; reminders carry "Erledigt" and "Verschieben" buttons.
 
-`/heute` `/plan` `/erledigt` `/verschieben` `/uebernehmen` `/token` `/urlaub` `/punkte` `/aufgaben`
+`/heute` `/plan` `/erledigt` `/verschieben` `/uebernehmen` `/token` `/schenken` `/urlaub` `/punkte` `/aufgaben`
 `/neu Name | Rhythmus | gemeinsam | ab Datum` `/rhythmus Nr | Rhythmus` `/termin Nr | Datum`
 `/nervig` `/vorschau 0–10` `/loeschen` `/hilfe`

@@ -276,15 +276,21 @@ export const takeOverPicker = (state: State, actor: ParticipantId, today: LocalD
 	)
 }
 
+const giftButton = { text: "Token verschenken", data: encodeCallback({ _tag: "TokenGiftStart" }) }
+
 export const tokenView = (state: State, actor: ParticipantId, now: LocalMoment): View => {
 	const mine = state.tokens.filter((j) => j.holder === actor)
 	if (mine.length === 0) {
-		return view("Du hast keine Tokens. Die gibt es, wenn jemand anderes etwas verpasst.")
+		return view(
+			"Du hast keine Tokens. Die gibt es, wenn jemand anderes etwas verpasst, oder geschenkt.",
+			[[giftButton]],
+		)
 	}
 	const lines = mine.map((j) => {
 		const task = state.tasks.find((t) => t.id === j.taskId)
 		const label = task ? taskLabel(task) : "?"
-		return `• ${label} gegen ${bold(participantName(state, j.debtor))} (seit ${formatDate(j.earnedOn, now.date)})`
+		const origin = j.source === "gift" ? "geschenkt am" : "seit"
+		return `• ${label} gegen ${bold(participantName(state, j.debtor))} (${origin} ${formatDate(j.earnedOn, now.date)})`
 	})
 	const playable = state.tasks.filter((t) => {
 		const due = effectiveDueDate(state, t)
@@ -299,9 +305,64 @@ export const tokenView = (state: State, actor: ParticipantId, now: LocalMoment):
 		playable.length > 0
 			? "\n\nEinlösbar:"
 			: `\n\nGerade nicht einlösbar. Das geht nur für deinen nächsten Termin der Aufgabe, bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`
+	return view(`<b>Deine Tokens</b>\n\n${lines.join("\n")}${hint}`, [
+		...playable.map((t) => [tokenButton(t)]),
+		[giftButton],
+	])
+}
+
+/** Step 1 of gifting: whom to. Skipped when there is only one other person. */
+export const giftRecipientPicker = (state: State, actor: ParticipantId): View => {
+	const others = state.participants.filter((p) => p.id !== actor)
+	const only = others[0]
+	if (only === undefined) {
+		return view("Hier ist sonst niemand, dem man etwas schenken könnte.")
+	}
+	if (others.length === 1) {
+		return giftTaskPicker(state, only.id)
+	}
 	return view(
-		`<b>Deine Tokens</b>\n\n${lines.join("\n")}${hint}`,
-		playable.map((t) => [tokenButton(t)]),
+		"Wem willst du ein Token schenken?",
+		column(
+			others.map((p) => ({
+				text: p.name,
+				data: encodeCallback({ _tag: "TokenGiftRecipient", recipient: p.id }),
+			})),
+		),
+	)
+}
+
+/** Step 2 of gifting: for which task. */
+export const giftTaskPicker = (state: State, recipient: ParticipantId): View => {
+	const tasks = state.tasks.filter((t) => t.kind === "rotating")
+	if (tasks.length === 0) {
+		return view("Es gibt keine Aufgaben, für die es Tokens gibt.")
+	}
+	return view(
+		`Für welche Aufgabe soll ${bold(participantName(state, recipient))} ein Token bekommen? Eingelöst wird es auf deine Kosten.`,
+		[
+			...taskButtons(tasks, (t) =>
+				encodeCallback({ _tag: "TokenGiftTask", recipient, taskId: t.id }),
+			),
+			[{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) }],
+		],
+	)
+}
+
+/** Step 3 of gifting: spell out what it means before it happens. */
+export const giftConfirm = (state: State, recipient: ParticipantId, task: Task): View => {
+	const name = bold(participantName(state, recipient))
+	return view(
+		`${name} bekommt ein Token für ${taskLabel(task)}. Wenn ${name} das nächste Mal dran ist und es einlöst, bist du dran. Zurücknehmen geht nicht.\n\nVerschenken?`,
+		[
+			[
+				{
+					text: "Verschenken",
+					data: encodeCallback({ _tag: "TokenGiftConfirm", recipient, taskId: task.id }),
+				},
+				{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) },
+			],
+		],
 	)
 }
 

@@ -76,6 +76,10 @@ export const Token = Schema.Struct({
 	holder: ParticipantId,
 	debtor: ParticipantId,
 	earnedOn: LocalDate,
+	/** Earned because the debtor missed a day, or voluntarily given away by the debtor. */
+	source: Schema.Literals(["missed", "gift"]).pipe(
+		Schema.withDecodingDefaultKey(Effect.succeed("missed" as const)),
+	),
 })
 export type Token = typeof Token.Type
 

@@ -376,8 +376,60 @@ export const redeemToken = (
 				...chatOf(next, token.debtor).map((chatId) =>
 					send(
 						chatId,
-						`${bold(me.name)} hat ein Token eingelöst. Du übernimmst ${taskLabel(task)} (${when}).\nDas ist die Rechnung für den ${formatDate(token.earnedOn)}.`,
+						`${bold(me.name)} hat ein Token eingelöst. Du übernimmst ${taskLabel(task)} (${when}).\n${token.source === "gift" ? `Das hattest du am ${formatDate(token.earnedOn)} selbst verschenkt.` : `Das ist die Rechnung für den ${formatDate(token.earnedOn)}.`}`,
 					),
+				),
+			],
+		}
+	})
+
+/**
+ * Gives `recipient` a token against the giver: one turn of `taskId` the recipient may push onto
+ * the giver later. Costs only the giver, so no approval is needed.
+ */
+export const giftToken = (
+	state: State,
+	actor: ParticipantId,
+	recipient: ParticipantId,
+	taskId: string,
+	today: LocalDate,
+): Effect.Effect<Transition, Rejected> =>
+	Effect.gen(function* () {
+		const me = yield* requireParticipant(state, actor)
+		const task = yield* requireTask(state, taskId)
+		if (recipient === actor) {
+			return yield* reject(
+				"Sich selbst ein Token schenken ergibt wenig Sinn. Das wäre dann einfach Arbeit.",
+			)
+		}
+		const receiver = yield* Option.match(findParticipant(state, recipient), {
+			onNone: () => reject("Diese Person gehört nicht (mehr) zum Haushalt."),
+			onSome: Effect.succeed,
+		})
+		if (task.kind === "joint") {
+			return yield* reject("Bei gemeinsamen Aufgaben gibt es keine Tokens.")
+		}
+		const [id, withId] = allocateId(state, "j")
+		const token: Token = {
+			id,
+			taskId,
+			holder: recipient,
+			debtor: actor,
+			earnedOn: today,
+			source: "gift",
+		}
+		const next: State = { ...withId, tokens: [...withId.tokens, token] }
+		return {
+			state: next,
+			toast: "Verschenkt.",
+			outbox: [
+				send(
+					me.chatId,
+					`Verschenkt. ${bold(receiver.name)} kann ${taskLabel(task)} damit einmal an dich abgeben. Großzügig.`,
+				),
+				send(
+					receiver.chatId,
+					`${bold(me.name)} schenkt dir ein Token für ${taskLabel(task)}. Wenn du das nächste Mal dran bist, kannst du es einlösen (/token), dann ist ${bold(me.name)} dran. Kein Haken. Vermutlich.`,
 				),
 			],
 		}
