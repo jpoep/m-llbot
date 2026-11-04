@@ -51,7 +51,6 @@ import {
 	donePicker,
 	giftConfirm,
 	giftRecipientPicker,
-	giftTaskPicker,
 	planView,
 	rescheduleDatePicker,
 	reschedulePicker,
@@ -229,18 +228,11 @@ const handleCallback = (ctx: Context, action: CallbackAction): Handler => {
 		case "TokenGiftStart":
 			return showView(ctx, (s, a) => giftRecipientPicker(s, a))
 		case "TokenGiftRecipient":
-			return showView(ctx, (s) => giftTaskPicker(s, ParticipantId.make(action.recipient)))
-		case "TokenGiftTask":
-			return showTaskView(ctx, action.taskId, (s) =>
-				Option.map(findTask(s, action.taskId), (task) =>
-					giftConfirm(s, ParticipantId.make(action.recipient), task),
-				),
-			)
+			return showView(ctx, (s) => giftConfirm(s, ParticipantId.make(action.recipient)))
 		case "TokenGiftConfirm":
 			return runButton(
 				ctx,
-				(s, now) =>
-					giftToken(s, actor, ParticipantId.make(action.recipient), action.taskId, now.date),
+				(s, now) => giftToken(s, actor, ParticipantId.make(action.recipient), now.date),
 				removeKeyboard(ctx),
 			)
 		case "TakeOver":

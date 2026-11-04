@@ -70,9 +70,12 @@ export const Task = Schema.Struct({
 export type Task = typeof Task.Type
 
 /** Earned when someone else misses a rotating task. Makes the debtor do one of your turns. */
+/**
+ * A wildcard: the holder may push any one of their rotating turns onto the debtor.
+ * (Tokens stored before they became wildcards carry a `taskId`, which is simply dropped.)
+ */
 export const Token = Schema.Struct({
 	id: Schema.String,
-	taskId: Schema.String,
 	holder: ParticipantId,
 	debtor: ParticipantId,
 	earnedOn: LocalDate,

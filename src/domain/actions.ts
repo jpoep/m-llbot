@@ -308,7 +308,7 @@ export const takeOver = (
 		}
 	})
 
-/** Tokens of `holder` for `task` whose debtor could actually take over on `date`. */
+/** Tokens of `holder` whose debtor could actually take over `task` on `date`, oldest first. */
 export const playableTokens = (
 	state: State,
 	holder: ParticipantId,
@@ -317,8 +317,8 @@ export const playableTokens = (
 ): ReadonlyArray<Token> =>
 	state.tokens.filter(
 		(j) =>
+			task.kind === "rotating" &&
 			j.holder === holder &&
-			j.taskId === task.id &&
 			j.debtor !== holder &&
 			isAvailable(state, j.debtor, date),
 	)
@@ -355,7 +355,9 @@ export const redeemToken = (
 		}
 		const token = playableTokens(state, actor, task, due)[0]
 		if (token === undefined) {
-			return yield* reject("Du hast kein einlösbares Token für diese Aufgabe.")
+			return yield* reject(
+				"Du hast kein einlösbares Token. Oder die Person, gegen die es gilt, ist an dem Tag im Urlaub.",
+			)
 		}
 		const updated: Task = { ...task, current: { ...task.current, assignee: token.debtor } }
 		const next = updateStats(
@@ -384,19 +386,17 @@ export const redeemToken = (
 	})
 
 /**
- * Gives `recipient` a token against the giver: one turn of `taskId` the recipient may push onto
- * the giver later. Costs only the giver, so no approval is needed.
+ * Gives `recipient` a token against the giver: one turn of any rotating task the recipient may
+ * push onto the giver later. Costs only the giver, so no approval is needed.
  */
 export const giftToken = (
 	state: State,
 	actor: ParticipantId,
 	recipient: ParticipantId,
-	taskId: string,
 	today: LocalDate,
 ): Effect.Effect<Transition, Rejected> =>
 	Effect.gen(function* () {
 		const me = yield* requireParticipant(state, actor)
-		const task = yield* requireTask(state, taskId)
 		if (recipient === actor) {
 			return yield* reject(
 				"Sich selbst ein Token schenken ergibt wenig Sinn. Das wäre dann einfach Arbeit.",
@@ -406,18 +406,8 @@ export const giftToken = (
 			onNone: () => reject("Diese Person gehört nicht (mehr) zum Haushalt."),
 			onSome: Effect.succeed,
 		})
-		if (task.kind === "joint") {
-			return yield* reject("Bei gemeinsamen Aufgaben gibt es keine Tokens.")
-		}
 		const [id, withId] = allocateId(state, "j")
-		const token: Token = {
-			id,
-			taskId,
-			holder: recipient,
-			debtor: actor,
-			earnedOn: today,
-			source: "gift",
-		}
+		const token: Token = { id, holder: recipient, debtor: actor, earnedOn: today, source: "gift" }
 		const next: State = { ...withId, tokens: [...withId.tokens, token] }
 		return {
 			state: next,
@@ -425,11 +415,11 @@ export const giftToken = (
 			outbox: [
 				send(
 					me.chatId,
-					`Verschenkt. ${bold(receiver.name)} kann ${taskLabel(task)} damit einmal an dich abgeben. Großzügig.`,
+					`Verschenkt. ${bold(receiver.name)} kann damit einmal eine Aufgabe an dich abgeben, egal welche. Großzügig.`,
 				),
 				send(
 					receiver.chatId,
-					`${bold(me.name)} schenkt dir ein Token für ${taskLabel(task)}. Wenn du das nächste Mal dran bist, kannst du es einlösen (/token), dann ist ${bold(me.name)} dran. Kein Haken. Vermutlich.`,
+					`${bold(me.name)} schenkt dir ein Token. Wenn du das nächste Mal bei irgendeiner Aufgabe dran bist, kannst du es einlösen (/token), dann ist ${bold(me.name)} dran. Kein Haken. Vermutlich.`,
 				),
 			],
 		}
@@ -889,7 +879,6 @@ export const deleteTask = (
 		const next: State = {
 			...state,
 			tasks: state.tasks.filter((t) => t.id !== taskId),
-			tokens: state.tokens.filter((j) => j.taskId !== taskId),
 			reschedules: state.reschedules.filter((r) => r.taskId !== taskId),
 		}
 		return {

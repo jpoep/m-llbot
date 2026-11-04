@@ -14,8 +14,7 @@ export type CallbackAction =
 	| { readonly _tag: "Token"; readonly taskId: string; readonly index: number }
 	| { readonly _tag: "TokenGiftStart" }
 	| { readonly _tag: "TokenGiftRecipient"; readonly recipient: number }
-	| { readonly _tag: "TokenGiftTask"; readonly recipient: number; readonly taskId: string }
-	| { readonly _tag: "TokenGiftConfirm"; readonly recipient: number; readonly taskId: string }
+	| { readonly _tag: "TokenGiftConfirm"; readonly recipient: number }
 	| { readonly _tag: "RescheduleStart"; readonly taskId: string; readonly index: number }
 	| {
 			readonly _tag: "ReschedulePick"
@@ -47,8 +46,7 @@ const PREFIX: Record<Tag, string> = {
 	Token: "j",
 	TokenGiftStart: "gs",
 	TokenGiftRecipient: "gr",
-	TokenGiftTask: "gt",
-	TokenGiftConfirm: "gc",
+	TokenGiftConfirm: "gk",
 	RescheduleStart: "rs",
 	ReschedulePick: "rp",
 	RescheduleApprove: "ra",
@@ -84,10 +82,8 @@ export const encodeCallback = (action: CallbackAction): string => {
 		case "RescheduleCancel":
 			return `${prefix}:${action.requestId}`
 		case "TokenGiftRecipient":
-			return `${prefix}:${action.recipient}`
-		case "TokenGiftTask":
 		case "TokenGiftConfirm":
-			return `${prefix}:${action.recipient}:${action.taskId}`
+			return `${prefix}:${action.recipient}`
 		case "VacationApprove":
 		case "VacationReject":
 		case "VacationCancel":
@@ -166,14 +162,10 @@ export const decodeCallback = (data: string): Option.Option<CallbackAction> => {
 				Option.map(({ taskId, level }) => ({ _tag: tag, taskId, level })),
 			)
 		case "TokenGiftRecipient":
+		case "TokenGiftConfirm":
 			return second === undefined
 				? Option.map(parseParticipant(first), (recipient) => ({ _tag: tag, recipient }))
 				: Option.none()
-		case "TokenGiftTask":
-		case "TokenGiftConfirm":
-			return Option.all({ recipient: parseParticipant(first), taskId: parseId(second) }).pipe(
-				Option.map(({ recipient, taskId }) => ({ _tag: tag, recipient, taskId })),
-			)
 		case "Dismiss":
 		case "DoneOther":
 		case "TokenGiftStart":

@@ -47,7 +47,6 @@ const punishRotatingMiss = (
 	for (const rival of rivals) {
 		tokens.push({
 			id: `j${next.nextId}`,
-			taskId: task.id,
 			holder: rival.id,
 			debtor: culprit,
 			earnedOn: addDays(day, -1),
@@ -76,7 +75,7 @@ const punishRotatingMiss = (
 		outbox.push(
 			send(
 				rival.chatId,
-				`${culpritName} hat ${taskLabel(task)} nicht erledigt. Du bekommst dafür ein Token.\nWenn du das nächste Mal dran bist, kannst du es einlösen (/token). Dann ist ${culpritName} dran.`,
+				`${culpritName} hat ${taskLabel(task)} nicht erledigt. Du bekommst dafür ein Token.\nDas gilt für jede Aufgabe: Wenn du das nächste Mal dran bist, kannst du es einlösen (/token). Dann ist ${culpritName} dran.`,
 			),
 		)
 	}

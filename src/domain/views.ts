@@ -287,10 +287,8 @@ export const tokenView = (state: State, actor: ParticipantId, now: LocalMoment):
 		)
 	}
 	const lines = mine.map((j) => {
-		const task = state.tasks.find((t) => t.id === j.taskId)
-		const label = task ? taskLabel(task) : "?"
-		const origin = j.source === "gift" ? "geschenkt am" : "seit"
-		return `• ${label} gegen ${bold(participantName(state, j.debtor))} (${origin} ${formatDate(j.earnedOn, now.date)})`
+		const origin = j.source === "gift" ? "geschenkt am" : "verdient am"
+		return `• gegen ${bold(participantName(state, j.debtor))} (${origin} ${formatDate(j.earnedOn, now.date)})`
 	})
 	const playable = state.tasks.filter((t) => {
 		const due = effectiveDueDate(state, t)
@@ -304,11 +302,11 @@ export const tokenView = (state: State, actor: ParticipantId, now: LocalMoment):
 	const hint =
 		playable.length > 0
 			? "\n\nEinlösbar:"
-			: `\n\nGerade nicht einlösbar. Das geht nur für deinen nächsten Termin der Aufgabe, bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`
-	return view(`<b>Deine Tokens</b>\n\n${lines.join("\n")}${hint}`, [
-		...playable.map((t) => [tokenButton(t)]),
-		[giftButton],
-	])
+			: `\n\nGerade nicht einlösbar. Das geht für deine anstehenden Termine, jeweils bis ${formatMinute(settings.tokenCutoffMinute)} Uhr am Fälligkeitstag.`
+	return view(
+		`<b>Deine Tokens</b>\nGelten für jede Aufgabe, bei der du dran bist.\n\n${lines.join("\n")}${hint}`,
+		[...playable.map((t) => [tokenButton(t)]), [giftButton]],
+	)
 }
 
 /** Step 1 of gifting: whom to. Skipped when there is only one other person. */
@@ -319,7 +317,7 @@ export const giftRecipientPicker = (state: State, actor: ParticipantId): View =>
 		return view("Hier ist sonst niemand, dem man etwas schenken könnte.")
 	}
 	if (others.length === 1) {
-		return giftTaskPicker(state, only.id)
+		return giftConfirm(state, only.id)
 	}
 	return view(
 		"Wem willst du ein Token schenken?",
@@ -332,34 +330,14 @@ export const giftRecipientPicker = (state: State, actor: ParticipantId): View =>
 	)
 }
 
-/** Step 2 of gifting: for which task. */
-export const giftTaskPicker = (state: State, recipient: ParticipantId): View => {
-	const tasks = state.tasks.filter((t) => t.kind === "rotating")
-	if (tasks.length === 0) {
-		return view("Es gibt keine Aufgaben, für die es Tokens gibt.")
-	}
-	return view(
-		`Für welche Aufgabe soll ${bold(participantName(state, recipient))} ein Token bekommen? Eingelöst wird es auf deine Kosten.`,
-		[
-			...taskButtons(tasks, (t) =>
-				encodeCallback({ _tag: "TokenGiftTask", recipient, taskId: t.id }),
-			),
-			[{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) }],
-		],
-	)
-}
-
-/** Step 3 of gifting: spell out what it means before it happens. */
-export const giftConfirm = (state: State, recipient: ParticipantId, task: Task): View => {
+/** Step 2 of gifting: spell out what it means before it happens. */
+export const giftConfirm = (state: State, recipient: ParticipantId): View => {
 	const name = bold(participantName(state, recipient))
 	return view(
-		`${name} bekommt ein Token für ${taskLabel(task)}. Wenn ${name} das nächste Mal dran ist und es einlöst, bist du dran. Zurücknehmen geht nicht.\n\nVerschenken?`,
+		`${name} bekommt ein Token gegen dich. Damit kann ${name} einmal eine Aufgabe an dich abgeben, egal welche. Zurücknehmen geht nicht.\n\nVerschenken?`,
 		[
 			[
-				{
-					text: "Verschenken",
-					data: encodeCallback({ _tag: "TokenGiftConfirm", recipient, taskId: task.id }),
-				},
+				{ text: "Verschenken", data: encodeCallback({ _tag: "TokenGiftConfirm", recipient }) },
 				{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) },
 			],
 		],
@@ -452,12 +430,9 @@ export const deletePicker = (state: State): View =>
 			)
 
 export const deleteConfirm = (task: Task): View =>
-	view(
-		`${taskLabel(task)} (${formatCadence(task.cadence)}) wirklich löschen? Zugehörige Tokens verfallen.`,
+	view(`${taskLabel(task)} (${formatCadence(task.cadence)}) wirklich löschen?`, [
 		[
-			[
-				{ text: "Löschen", data: encodeCallback({ _tag: "DeleteConfirm", taskId: task.id }) },
-				{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) },
-			],
+			{ text: "Löschen", data: encodeCallback({ _tag: "DeleteConfirm", taskId: task.id }) },
+			{ text: "Abbrechen", data: encodeCallback({ _tag: "Dismiss" }) },
 		],
-	)
+	])

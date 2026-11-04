@@ -22,12 +22,12 @@ towards midnight until they are done.
   another day within the next two weeks. Someone else has to approve it. The rhythm stays as is;
   `/termin` is the permanent change.
 - **Missed a day?** The task is due again the next day (regardless of cadence), the annoyance rises
-  by 2 per missed day, and every other participant gets a 🃏 **token** against the culprit.
-- **Tokens**: when it's your turn on that task, play a token and the culprit has to do it instead.
-  You can play it any time before 12:00 on the due day, including days in advance. The rotation
-  then continues as if you had done it.
+  by 2 per missed day, and every other participant gets a **token** against the culprit.
+- **Tokens** are wildcards: whenever it's your turn on any rotating task, redeem one and the
+  person it's held against does it instead. Redeemable until 12:00 on the due day, including days
+  in advance. The rotation then continues as if you had done it.
 - **Gift a token** (`/schenken` or the button under `/token`): give someone a token against
-  yourself for a task, e.g. as thanks. When they redeem it, you do their turn.
+  yourself, e.g. as thanks. When they redeem it, you do one of their turns.
 - **Take over** (`/uebernehmen`): do someone else's turn voluntarily. No reward.
 - **Vacation** (`/urlaub 20.12. 03.01.`): has to be approved by someone else and can be cancelled.
   Your turns go to the others (no tokens); joint tasks are postponed until everyone is back.
